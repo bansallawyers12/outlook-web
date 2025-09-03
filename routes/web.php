@@ -3,6 +3,8 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\LabelController;
 use App\Http\Controllers\EmailAccountController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,9 +36,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/accounts/{account}/test-authentication', [EmailAccountController::class, 'testAuthentication'])->name('accounts.test-authentication');
 
     Route::post('/emails/send', [EmailController::class, 'send'])->name('emails.send');
+    Route::get('/emails/compose', [EmailController::class, 'compose'])->name('emails.compose');
     Route::get('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.get');
     Route::post('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.post');
     Route::post('/auth/zoho/add', [AuthController::class, 'addZohoAccount'])->name('auth.zoho.add');
+
+    // Attachment download
+    Route::get('/attachments/{id}/download', [AttachmentController::class, 'download'])->name('attachments.download');
+
+    // Labels minimal API for UI
+    Route::get('/labels', [LabelController::class, 'index'])->name('labels.index');
+    Route::post('/labels/apply', [LabelController::class, 'apply'])->name('labels.apply');
+    Route::post('/labels/remove', [LabelController::class, 'remove'])->name('labels.remove');
 });
 
 require __DIR__.'/auth.php';

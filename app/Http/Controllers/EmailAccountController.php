@@ -163,6 +163,9 @@ class EmailAccountController extends Controller
     {
         $this->authorize('view', $account);
 
+        // Update last connection attempt timestamp
+        $account->update(['last_connection_attempt' => now()]);
+
         try {
             $python = 'py'; // Use py command for Windows Python launcher
             if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
@@ -183,19 +186,65 @@ class EmailAccountController extends Controller
                 // Parse the test results
                 $testResults = $this->parseNetworkTestResults($output);
                 
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Connection test completed',
-                    'results' => $testResults
-                ]);
+                // Check if all tests passed
+                $allPassed = true;
+                $errorDetails = [];
+                
+                foreach ($testResults as $test => $result) {
+                    if (!$result) {
+                        $allPassed = false;
+                        $errorDetails[] = ucfirst($test) . ' test failed';
+                    }
+                }
+                
+                if ($allPassed) {
+                    // Update account with success
+                    $account->update([
+                        'connection_status' => true,
+                        'last_connection_error' => null
+                    ]);
+                    
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Connection test completed successfully',
+                        'results' => $testResults
+                    ]);
+                } else {
+                    // Update account with failure details
+                    $errorMessage = implode(', ', $errorDetails);
+                    $account->update([
+                        'connection_status' => false,
+                        'last_connection_error' => $errorMessage
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Connection test failed: ' . $errorMessage,
+                        'error' => $errorMessage,
+                        'results' => $testResults
+                    ], 422);
+                }
             } else {
+                // Update account with failure
+                $errorMessage = $errorOutput ?: $output ?: 'Unknown connection error';
+                $account->update([
+                    'connection_status' => false,
+                    'last_connection_error' => $errorMessage
+                ]);
+                
                 return response()->json([
                     'success' => false,
-                    'message' => 'Connection test failed',
-                    'error' => $errorOutput ?: $output
+                    'message' => 'Connection test failed: ' . $errorMessage,
+                    'error' => $errorMessage
                 ], 422);
             }
         } catch (\Exception $e) {
+            // Update account with failure
+            $account->update([
+                'connection_status' => false,
+                'last_connection_error' => $e->getMessage()
+            ]);
+            
             Log::error('Connection test failed', [
                 'account_id' => $account->id,
                 'error' => $e->getMessage()
@@ -203,7 +252,8 @@ class EmailAccountController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Connection test failed: ' . $e->getMessage()
+                'message' => 'Connection test failed: ' . $e->getMessage(),
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -304,6 +354,22 @@ class EmailAccountController extends Controller
      */
     private function parseNetworkTestResults(string $output): array
     {
+        // Try to parse JSON output first (new format)
+        $lines = explode("\n", $output);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line)) continue;
+            
+            // Check if this line contains JSON
+            if (strpos($line, '{') === 0 && strpos($line, '}') !== false) {
+                $jsonData = json_decode($line, true);
+                if ($jsonData && is_array($jsonData)) {
+                    return $jsonData;
+                }
+            }
+        }
+        
+        // Fallback to old text parsing method
         $results = [
             'dns' => false,
             'socket' => false,

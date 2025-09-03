@@ -1,12 +1,15 @@
 {
-  "hostname": "imap.zoho.com",
-  "port": 993,
-  "timestamp": "2025-09-03T16:03:29.467071",
+  "hostname": "smtp.zoho.com",
+  "port": 465,
+  "timestamp": "2025-09-03T18:50:33.857988",
   "tests": {
+    "internet": {
+      "success": true
+    },
     "dns": {
       "success": true,
       "ips": [
-        "204.141.32.29"
+        "204.141.32.56"
       ]
     },
     "socket": {
@@ -75,7 +78,8 @@
       }
     },
     "imap": {
-      "success": true
+      "success": false,
+      "error": "unexpected response: b'220 mx.zohomail.com SMTP Server ready September 3, 2025 1:50:35 AM PDT'"
     }
   }
 }

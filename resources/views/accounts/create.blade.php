@@ -27,7 +27,7 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('provider') border-red-500 @enderror"
                                     required>
                                 <option value="">Select a provider</option>
-                                <option value="zoho" {{ old('provider') == 'zoho' ? 'selected' : '' }}>Zoho Mail</option>
+                                <option value="zoho" {{ (old('provider') == 'zoho' || request('provider') == 'zoho') ? 'selected' : '' }}>Zoho Mail</option>
                                 <option value="gmail" {{ old('provider') == 'gmail' ? 'selected' : '' }}>Gmail</option>
                                 <option value="outlook" {{ old('provider') == 'outlook' ? 'selected' : '' }}>Outlook/Hotmail</option>
                             </select>
@@ -165,6 +165,11 @@
         const selectedProvider = document.getElementById('provider').value;
         if (selectedProvider) {
             document.getElementById(selectedProvider + '-help').classList.remove('hidden');
+        }
+        
+        // If Zoho is pre-selected via URL parameter, show help immediately
+        if (selectedProvider === 'zoho') {
+            document.getElementById('zoho-help').classList.remove('hidden');
         }
     </script>
 </x-app-layout>

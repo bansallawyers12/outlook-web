@@ -8,7 +8,21 @@ import socket
 import ssl
 import sys
 import json
+import urllib.request
 from datetime import datetime
+
+def test_internet_connectivity():
+    """Test basic internet connectivity"""
+    try:
+        print("Testing basic internet connectivity...")
+        urllib.request.urlopen('http://www.google.com', timeout=10)
+        print("[OK] Internet connectivity successful")
+        return {"success": True}
+    except Exception as e:
+        print(f"[FAIL] Internet connectivity failed: {e}")
+        print("  This suggests your local machine may not have internet access.")
+        print("  Consider using ngrok or checking your network configuration.")
+        return {"success": False, "error": str(e)}
 
 def test_dns_resolution(hostname):
     """Test DNS resolution for a hostname"""
@@ -16,11 +30,17 @@ def test_dns_resolution(hostname):
         print(f"Testing DNS resolution for {hostname}...")
         ip_addresses = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
         resolved_ips = [ip[4][0] for ip in ip_addresses]
-        print(f"✓ DNS resolution successful: {resolved_ips}")
+        print(f"[OK] DNS resolution successful: {resolved_ips}")
         return {"success": True, "ips": resolved_ips}
     except socket.gaierror as e:
-        print(f"✗ DNS resolution failed: {e}")
-        return {"success": False, "error": str(e)}
+        print(f"[FAIL] DNS resolution failed: {e}")
+        print(f"  Error details: {e.errno} - {e.strerror}")
+        if e.errno == 11001:  # WSAHOST_NOT_FOUND
+            print(f"  This usually means the hostname cannot be resolved.")
+            print(f"  Check your internet connection and DNS settings.")
+        elif e.errno == 11003:  # WSANO_DATA
+            print(f"  This usually means no data record of the requested type exists.")
+        return {"success": False, "error": str(e), "errno": e.errno}
 
 def test_socket_connection(hostname, port, timeout=10):
     """Test basic socket connection"""
@@ -32,13 +52,13 @@ def test_socket_connection(hostname, port, timeout=10):
         sock.close()
         
         if result == 0:
-            print(f"✓ Socket connection successful")
+            print(f"[OK] Socket connection successful")
             return {"success": True}
         else:
-            print(f"✗ Socket connection failed (error code: {result})")
+            print(f"[FAIL] Socket connection failed (error code: {result})")
             return {"success": False, "error_code": result}
     except Exception as e:
-        print(f"✗ Socket connection error: {e}")
+        print(f"[FAIL] Socket connection error: {e}")
         return {"success": False, "error": str(e)}
 
 def test_ssl_connection(hostname, port, timeout=10):
@@ -49,12 +69,12 @@ def test_ssl_connection(hostname, port, timeout=10):
         with socket.create_connection((hostname, port), timeout=timeout) as sock:
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                 cert = ssock.getpeercert()
-                print(f"✓ SSL connection successful")
+                print(f"[OK] SSL connection successful")
                 print(f"  Certificate subject: {cert.get('subject', 'N/A')}")
                 print(f"  Certificate issuer: {cert.get('issuer', 'N/A')}")
                 return {"success": True, "certificate": cert}
     except Exception as e:
-        print(f"✗ SSL connection failed: {e}")
+        print(f"[FAIL] SSL connection failed: {e}")
         return {"success": False, "error": str(e)}
 
 def test_imap_connection(hostname, port=993):
@@ -64,10 +84,10 @@ def test_imap_connection(hostname, port=993):
         import imaplib
         mail = imaplib.IMAP4_SSL(hostname, port)
         mail.logout()
-        print(f"✓ IMAP connection successful")
+        print(f"[OK] IMAP connection successful")
         return {"success": True}
     except Exception as e:
-        print(f"✗ IMAP connection failed: {e}")
+        print(f"[FAIL] IMAP connection failed: {e}")
         return {"success": False, "error": str(e)}
 
 def run_network_diagnostics(hostname, port=993):
@@ -83,6 +103,9 @@ def run_network_diagnostics(hostname, port=993):
         "timestamp": datetime.now().isoformat(),
         "tests": {}
     }
+    
+    # Test basic internet connectivity first
+    results["tests"]["internet"] = test_internet_connectivity()
     
     # Test DNS resolution
     results["tests"]["dns"] = test_dns_resolution(hostname)
@@ -103,12 +126,12 @@ def run_network_diagnostics(hostname, port=993):
     
     all_passed = True
     for test_name, result in results["tests"].items():
-        status = "✓ PASS" if result["success"] else "✗ FAIL"
+        status = "[OK] PASS" if result["success"] else "[FAIL] FAIL"
         print(f"{test_name.upper()}: {status}")
         if not result["success"]:
             all_passed = False
     
-    print(f"\nOverall Status: {'✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED'}")
+    print(f"\nOverall Status: {'[OK] ALL TESTS PASSED' if all_passed else '[FAIL] SOME TESTS FAILED'}")
     
     return results
 
@@ -130,6 +153,18 @@ def main():
         json.dump(results, f, indent=2)
     
     print(f"\nDetailed results saved to: {output_file}")
+    
+    # Output simplified results for Laravel to parse
+    simplified_results = {
+        "internet": results["tests"]["internet"]["success"],
+        "dns": results["tests"]["dns"]["success"],
+        "socket": results["tests"]["socket"]["success"],
+        "ssl": results["tests"]["ssl"]["success"],
+        "imap": results["tests"]["imap"]["success"]
+    }
+    
+    # Print JSON results to stdout for Laravel to capture
+    print(json.dumps(simplified_results))
 
 if __name__ == "__main__":
     main()

@@ -112,26 +112,26 @@
                     <h3 class="text-lg font-semibold mb-4">Account Statistics</h3>
                     
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="bg-blue-50 p-4 rounded-lg">
-                            <div class="text-2xl font-bold text-blue-600" id="total-emails">
-                                {{ \App\Models\Email::where('account_id', $account->id)->count() }}
-                            </div>
-                            <div class="text-sm text-blue-800">Total Emails</div>
-                        </div>
+                                                 <div class="bg-blue-50 p-4 rounded-lg">
+                             <div class="text-2xl font-bold text-blue-600" id="total-emails">
+                                 {{ $account->email_count }}
+                             </div>
+                             <div class="text-sm text-blue-800">Total Emails</div>
+                         </div>
 
-                        <div class="bg-green-50 p-4 rounded-lg">
-                            <div class="text-2xl font-bold text-green-600" id="recent-emails">
-                                {{ \App\Models\Email::where('account_id', $account->id)->where('created_at', '>=', now()->subDays(7))->count() }}
-                            </div>
-                            <div class="text-sm text-green-800">Emails (Last 7 Days)</div>
-                        </div>
+                         <div class="bg-green-50 p-4 rounded-lg">
+                             <div class="text-2xl font-bold text-green-600" id="recent-emails">
+                                 {{ $account->recent_email_count }}
+                             </div>
+                             <div class="text-sm text-green-800">Emails (Last 7 Days)</div>
+                         </div>
 
-                        <div class="bg-purple-50 p-4 rounded-lg">
-                            <div class="text-2xl font-bold text-purple-600" id="last-sync">
-                                {{ \App\Models\Email::where('account_id', $account->id)->latest()->first()?->created_at?->diffForHumans() ?? 'Never' }}
-                            </div>
-                            <div class="text-sm text-purple-800">Last Sync</div>
-                        </div>
+                         <div class="bg-purple-50 p-4 rounded-lg">
+                             <div class="text-2xl font-bold text-purple-600" id="last-sync">
+                                 {{ $account->last_sync ?? 'Never' }}
+                             </div>
+                             <div class="text-sm text-purple-800">Last Sync</div>
+                         </div>
                     </div>
                 </div>
             </div>
@@ -141,12 +141,12 @@
                 <div class="p-6 text-gray-900">
                     <h3 class="text-lg font-semibold mb-4">Recent Emails</h3>
                     
-                    @php
-                        $recentEmails = \App\Models\Email::where('account_id', $account->id)
-                            ->orderBy('created_at', 'desc')
-                            ->limit(10)
-                            ->get();
-                    @endphp
+                                         @php
+                         $recentEmails = $account->emails()
+                             ->orderBy('created_at', 'desc')
+                             ->limit(10)
+                             ->get();
+                     @endphp
 
                     @if($recentEmails->count() > 0)
                         <div class="space-y-3">
@@ -155,7 +155,8 @@
                                     <div class="flex justify-between items-start">
                                         <div class="flex-1">
                                             <h4 class="font-medium text-gray-900">{{ $email->subject ?: 'No Subject' }}</h4>
-                                            <p class="text-sm text-gray-600 mt-1">{{ $email->from_email }}</p>
+                                            <p class="text-sm text-gray-600 mt-1">From: {{ $email->sender_name ? $email->sender_name . ' <' . ($email->sender_email ?: $email->from_email) . '>' : ($email->sender_email ?: $email->from_email) }}</p>
+                                            <p class="text-sm text-gray-600">To: {{ is_array($email->recipients) ? implode(', ', $email->recipients) : ($email->to_email ?? '') }}</p>
                                             @if($email->body)
                                                 <p class="text-sm text-gray-500 mt-2 line-clamp-2">
                                                     {{ Str::limit(strip_tags($email->body), 100) }}
@@ -163,8 +164,31 @@
                                             @endif
                                         </div>
                                         <div class="text-sm text-gray-500 ml-4">
-                                            {{ $email->created_at->format('M j, g:i A') }}
+                                            {{ optional($email->sent_date)->format('F j, Y \a\t g:i A') ?? optional($email->received_at)->format('F j, Y \a\t g:i A') ?? $email->created_at->format('F j, Y \a\t g:i A') }}
                                         </div>
+                                    </div>
+
+                                    @php $attachments = $email->attachments; @endphp
+                                    @if($attachments && $attachments->count())
+                                        <div class="mt-3 border-t pt-3">
+                                            <div class="text-sm font-medium text-gray-700 mb-2">Attachments ({{ $attachments->count() }})</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                @foreach($attachments as $att)
+                                                    <a href="{{ route('attachments.download', $att->id) }}" class="inline-flex items-center px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-gray-100">
+                                                        {{ $att->filename }}
+                                                        <span class="ml-2 text-xs text-gray-500">({{ $att->formatted_file_size }})</span>
+                                                    </a>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endif
+
+                                    <div class="mt-3 flex items-center gap-2">
+                                        <select id="label-select-{{ $email->id }}" class="border rounded px-2 py-1 text-sm">
+                                            <option value="">Add label...</option>
+                                        </select>
+                                        <button onclick="applyLabel({{ $email->id }})" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm px-3 py-1 rounded">Apply</button>
+                                        <div id="labels-list-{{ $email->id }}" class="flex flex-wrap gap-1 ml-2"></div>
                                     </div>
                                 </div>
                             @endforeach
@@ -278,6 +302,39 @@
             .catch(error => {
                 resultsDiv.innerHTML = `<div class="text-red-600">Error: ${error.message}</div>`;
             });
+        }
+
+        // Labels UI helpers
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch('{{ route('labels.index') }}');
+                const labels = await res.json();
+                document.querySelectorAll('[id^="label-select-"]').forEach(sel => {
+                    labels.forEach(l => {
+                        const opt = document.createElement('option');
+                        opt.value = l.id;
+                        opt.textContent = l.name;
+                        sel.appendChild(opt);
+                    });
+                });
+            } catch (e) {}
+        });
+
+        async function applyLabel(emailId) {
+            const select = document.getElementById(`label-select-${emailId}`);
+            const labelId = select.value;
+            if (!labelId) return;
+            const res = await fetch('{{ route('labels.apply') }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email_id: emailId, label_id: labelId })
+            });
+            if (res.ok) {
+                location.reload();
+            }
         }
     </script>
 </x-app-layout>

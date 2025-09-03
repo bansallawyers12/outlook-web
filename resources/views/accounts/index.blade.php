@@ -4,10 +4,16 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ __('Email Accounts') }}
             </h2>
-            <a href="{{ route('accounts.create') }}" 
-               class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                Add New Account
-            </a>
+            <div class="flex gap-2">
+                <a href="{{ route('accounts.create') }}?provider=zoho" 
+                   class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                    Add Zoho Account
+                </a>
+                <a href="{{ route('accounts.create') }}" 
+                   class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Add Other Account
+                </a>
+            </div>
         </div>
     </x-slot>
 
@@ -77,11 +83,32 @@
                                     </div>
 
                                     <!-- Connection Status -->
+                                    <div class="mt-3">
+                                        <div class="text-sm">
+                                            <span class="font-medium">Connection Status:</span>
+                                            <span class="{{ $account->connection_status ? 'text-green-600' : ($account->last_connection_error ? 'text-red-600' : 'text-gray-500') }}">
+                                                {{ $account->connection_status_display }}
+                                            </span>
+                                        </div>
+                                        @if($account->last_connection_error)
+                                            <div class="text-xs text-red-500 mt-1" title="{{ $account->last_connection_error }}">
+                                                {{ $account->connection_error_display }}
+                                            </div>
+                                        @endif
+                                        @if($account->last_connection_attempt)
+                                            <div class="text-xs text-gray-400 mt-1">
+                                                Last tested: {{ $account->last_connection_attempt->diffForHumans() }}
+                                            </div>
+                                        @endif
+                                    </div>
+                                    
+                                    <!-- Dynamic Status (for testing) -->
                                     <div id="connection-status-{{ $account->id }}" class="mt-3 hidden">
                                         <div class="text-sm">
                                             <span class="font-medium">Connection Status:</span>
                                             <span id="status-text-{{ $account->id }}"></span>
                                         </div>
+                                        <div id="error-text-{{ $account->id }}" class="text-xs text-red-500 mt-1 hidden"></div>
                                     </div>
                                 </div>
                             @endforeach
@@ -137,10 +164,12 @@
         function testConnection(accountId) {
             const statusDiv = document.getElementById(`connection-status-${accountId}`);
             const statusText = document.getElementById(`status-text-${accountId}`);
+            const errorText = document.getElementById(`error-text-${accountId}`);
             
             statusDiv.classList.remove('hidden');
             statusText.textContent = 'Testing...';
             statusText.className = 'text-yellow-600';
+            errorText.classList.add('hidden');
 
             fetch(`/accounts/${accountId}/test-connection`, {
                 method: 'POST',
@@ -154,15 +183,26 @@
                 if (data.success) {
                     statusText.textContent = 'Connected ✓';
                     statusText.className = 'text-green-600';
+                    errorText.classList.add('hidden');
                     showTestResults(data.results);
+                    // Reload page to show updated status
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
                 } else {
                     statusText.textContent = 'Failed ✗';
                     statusText.className = 'text-red-600';
+                    if (data.error) {
+                        errorText.textContent = data.error;
+                        errorText.classList.remove('hidden');
+                    }
                 }
             })
             .catch(error => {
                 statusText.textContent = 'Error ✗';
                 statusText.className = 'text-red-600';
+                errorText.textContent = 'Network error occurred';
+                errorText.classList.remove('hidden');
                 console.error('Error:', error);
             });
         }

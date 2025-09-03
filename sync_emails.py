@@ -5,8 +5,61 @@ import json
 import socket
 import ssl
 import traceback
+import os
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
+from pathlib import Path
+
+
+def resolve_hostname_with_fallback(hostname, port=993):
+    """Try multiple methods to resolve hostname"""
+    methods = [
+        # Method 1: Standard getaddrinfo
+        lambda: socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM),
+        # Method 2: IPv4 only
+        lambda: socket.getaddrinfo(hostname, port, socket.AF_INET, socket.SOCK_STREAM),
+        # Method 3: gethostbyname
+        lambda: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', (socket.gethostbyname(hostname), port))],
+    ]
+    
+    for i, method in enumerate(methods, 1):
+        try:
+            print(f"DEBUG: Trying DNS resolution method {i} for {hostname}", file=sys.stderr)
+            result = method()
+            ip_addresses = [ip[4][0] for ip in result]
+            print(f"DEBUG: Method {i} succeeded: {ip_addresses}", file=sys.stderr)
+            return ip_addresses
+        except Exception as e:
+            print(f"DEBUG: Method {i} failed: {e}", file=sys.stderr)
+            continue
+    
+    raise socket.gaierror(f"All DNS resolution methods failed for {hostname}")
+
+
+def create_imap_connection_with_fallback(hostname, port=993):
+    """Create IMAP connection with DNS fallback"""
+    try:
+        # Try hostname first
+        print(f"DEBUG: Attempting IMAP connection to {hostname}:{port}", file=sys.stderr)
+        mail = imaplib.IMAP4_SSL(hostname, port)
+        print(f"DEBUG: IMAP connection established using hostname", file=sys.stderr)
+        return mail
+    except socket.gaierror as e:
+        print(f"DEBUG: Hostname connection failed: {e}", file=sys.stderr)
+        # Try with resolved IP address
+        try:
+            ip_addresses = resolve_hostname_with_fallback(hostname, port)
+            if ip_addresses:
+                ip_address = ip_addresses[0]
+                print(f"DEBUG: Attempting IMAP connection using IP address: {ip_address}", file=sys.stderr)
+                mail = imaplib.IMAP4_SSL(ip_address, port)
+                print(f"DEBUG: IMAP connection established using IP address", file=sys.stderr)
+                return mail
+        except Exception as ip_e:
+            print(f"DEBUG: IP address connection also failed: {ip_e}", file=sys.stderr)
+        
+        # Re-raise the original error if all methods fail
+        raise e
 
 
 def test_network_connectivity(hostname, port=993):
@@ -21,10 +74,9 @@ def test_network_connectivity(hostname, port=993):
     }
     
     try:
-        # Test DNS resolution
+        # Test DNS resolution with fallback methods
         print(f"DEBUG: Testing DNS resolution for {hostname}", file=sys.stderr)
-        ip_addresses = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        debug_info["dns_resolution"] = [ip[4][0] for ip in ip_addresses]
+        debug_info["dns_resolution"] = resolve_hostname_with_fallback(hostname, port)
         print(f"DEBUG: DNS resolved to: {debug_info['dns_resolution']}", file=sys.stderr)
         
         # Test socket connection
@@ -81,9 +133,8 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
     network_debug = test_network_connectivity(imap_host)
     
     try:
-        print(f"DEBUG: Attempting IMAP connection to {imap_host}", file=sys.stderr)
-        mail = imaplib.IMAP4_SSL(imap_host)
-        print(f"DEBUG: IMAP connection established", file=sys.stderr)
+        # Use the robust connection method with fallback
+        mail = create_imap_connection_with_fallback(imap_host)
         
         print(f"DEBUG: Attempting login for {email_user}", file=sys.stderr)
         mail.login(email_user, access_token)
@@ -135,26 +186,72 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
                 except:
                     parsed_date = None
             
-            # Extract body content
-            body = ""
+            # Extract body and attachments
+            text_body = ""
+            html_body = ""
+            attachments = []
             if msg.is_multipart():
                 for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        body = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                        break
-                    elif part.get_content_type() == "text/html" and not body:
-                        body = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    content_type = part.get_content_type()
+                    content_disposition = (part.get("Content-Disposition") or "").lower()
+                    filename = part.get_filename()
+
+                    # Body parts (exclude attachment disposition)
+                    if content_type == "text/plain" and not text_body and 'attachment' not in content_disposition:
+                        payload = part.get_payload(decode=True)
+                        text_body = (payload.decode('utf-8', errors='ignore') if isinstance(payload, (bytes, bytearray)) else str(payload))
+                    elif content_type == "text/html" and not html_body and 'attachment' not in content_disposition:
+                        payload = part.get_payload(decode=True)
+                        html_body = (payload.decode('utf-8', errors='ignore') if isinstance(payload, (bytes, bytearray)) else str(payload))
+
+                    # Attachment parts
+                    if filename or ('attachment' in content_disposition):
+                        try:
+                            payload = part.get_payload(decode=True) or b""
+                            safe_msg_id = (msg.get("Message-ID") or "noid").replace('<','').replace('>','').replace(':','_').replace('/','_').replace('\\','_')
+                            base_dir = Path('storage') / 'app' / 'attachments' / safe_msg_id
+                            base_dir.mkdir(parents=True, exist_ok=True)
+                            name = filename or f"attachment_{len(attachments)+1}"
+                            ext = ''
+                            if '.' in name:
+                                ext = name.split('.')[-1].lower()
+                            file_path = base_dir / name
+                            with open(file_path, 'wb') as f:
+                                f.write(payload)
+                            attachments.append({
+                                "filename": name,
+                                "display_name": name,
+                                "content_type": content_type,
+                                "file_size": file_path.stat().st_size,
+                                "file_path": str(file_path),
+                                "content_id": part.get('Content-ID'),
+                                "is_inline": 'inline' in content_disposition,
+                                "headers": dict(part.items()),
+                                "extension": ext,
+                            })
+                        except Exception:
+                            # Skip attachment save errors, continue processing
+                            pass
             else:
-                body = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+                payload = msg.get_payload(decode=True)
+                text_body = (payload.decode('utf-8', errors='ignore') if isinstance(payload, (bytes, bytearray)) else str(payload))
             
             messages.append({
                 "message_id": message_id,
                 "from": msg.get("From"),
+                "to": msg.get("To"),
+                "cc": msg.get("Cc"),
+                "reply_to": msg.get("Reply-To"),
                 "subject": msg.get("Subject"),
                 "date": date_str,
                 "parsed_date": parsed_date.isoformat() if parsed_date else None,
-                "body": body[:1000] if body else "",  # Limit body size
-                "folder": folder
+                "body": text_body[:4000] if text_body else "",
+                "text_body": text_body[:4000] if text_body else "",
+                "html_body": html_body if html_body else None,
+                "headers": dict(msg.items()),
+                "folder": folder,
+                "attachments": attachments,
+                "has_attachments": len(attachments) > 0
             })
 
         mail.close()

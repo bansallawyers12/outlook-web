@@ -1,0 +1,28 @@
+{
+  "hostname": "imap.gmail.com",
+  "port": 993,
+  "timestamp": "2025-09-03T18:43:46.013928",
+  "tests": {
+    "internet": {
+      "success": false,
+      "error": "<urlopen error [Errno 11003] getaddrinfo failed>"
+    },
+    "dns": {
+      "success": false,
+      "error": "[Errno 11003] getaddrinfo failed",
+      "errno": 11003
+    },
+    "socket": {
+      "success": false,
+      "error": "[WinError 10106] The requested service provider could not be loaded or initialized"
+    },
+    "ssl": {
+      "success": false,
+      "error": "[Errno 11003] getaddrinfo failed"
+    },
+    "imap": {
+      "success": false,
+      "error": "[Errno 11003] getaddrinfo failed"
+    }
+  }
+}

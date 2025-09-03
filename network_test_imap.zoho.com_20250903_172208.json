@@ -1,0 +1,84 @@
+{
+  "hostname": "imap.zoho.com",
+  "port": 993,
+  "timestamp": "2025-09-03T17:22:06.502386",
+  "tests": {
+    "internet": {
+      "success": true
+    },
+    "dns": {
+      "success": true,
+      "ips": [
+        "204.141.32.29"
+      ]
+    },
+    "socket": {
+      "success": true
+    },
+    "ssl": {
+      "success": true,
+      "certificate": {
+        "subject": [
+          [
+            [
+              "commonName",
+              "*.zoho.com"
+            ]
+          ]
+        ],
+        "issuer": [
+          [
+            [
+              "countryName",
+              "US"
+            ]
+          ],
+          [
+            [
+              "organizationName",
+              "DigiCert Inc"
+            ]
+          ],
+          [
+            [
+              "organizationalUnitName",
+              "www.digicert.com"
+            ]
+          ],
+          [
+            [
+              "commonName",
+              "Thawte TLS RSA CA G1"
+            ]
+          ]
+        ],
+        "version": 3,
+        "serialNumber": "0C17A35804374B583D88E11F0E426F95",
+        "notBefore": "Jan 11 00:00:00 2025 GMT",
+        "notAfter": "Jan 29 23:59:59 2026 GMT",
+        "subjectAltName": [
+          [
+            "DNS",
+            "*.zoho.com"
+          ],
+          [
+            "DNS",
+            "zoho.com"
+          ]
+        ],
+        "OCSP": [
+          "http://status.thawte.com"
+        ],
+        "caIssuers": [
+          "http://cacerts.thawte.com/ThawteTLSRSACAG1.crt"
+        ],
+        "crlDistributionPoints": [
+          "http://cdp.thawte.com/ThawteTLSRSACAG1.crl"
+        ]
+      }
+    },
+    "imap": {
+      "success": true
+    }
+  }
+}
