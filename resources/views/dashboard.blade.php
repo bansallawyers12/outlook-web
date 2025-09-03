@@ -7,6 +7,18 @@
 
     <div class="py-6" x-data="emailApp()">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            @if (session('success'))
+                <div class="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                    {{ session('success') }}
+                </div>
+            @endif
+
+            @if (session('error'))
+                <div class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                    {{ session('error') }}
+                </div>
+            @endif
+
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-4 border-b border-gray-200">
                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -14,6 +26,7 @@
                             <div>
                                 <label for="accountDropdown" class="sr-only">Account</label>
                                 <select id="accountDropdown" x-model="selectedAccountId" @change="loadEmails" class="rounded-md border-gray-300 text-sm">
+                                    <option value="">Select an account</option>
                                     <template x-for="acct in accounts" :key="acct.id">
                                         <option :value="acct.id" x-text="acct.label"></option>
                                     </template>
@@ -27,9 +40,20 @@
                                     </template>
                                 </select>
                             </div>
+                            <div class="flex gap-2 items-center">
+                                <div>
+                                    <label for="startDate" class="sr-only">Start Date</label>
+                                    <input type="date" id="startDate" x-model="startDate" class="rounded-md border-gray-300 text-sm" placeholder="Start date">
+                                </div>
+                                <div>
+                                    <label for="endDate" class="sr-only">End Date</label>
+                                    <input type="date" id="endDate" x-model="endDate" class="rounded-md border-gray-300 text-sm" placeholder="End date">
+                                </div>
+                            </div>
                         </div>
                         <div class="flex gap-2">
-                            <a href="{{ route('oauth.redirect', ['provider' => 'zoho']) }}" class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-600">Add Zoho account</a>
+                            <a href="{{ route('accounts.index') }}" class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-600">Manage Accounts</a>
+                            <button type="button" @click="showZohoForm = true" class="inline-flex items-center rounded-md bg-gray-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-500">Add Zoho account</button>
                             <button type="button" @click="syncEmails" class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">Sync</button>
                             <button type="button" @click="composeMail" class="inline-flex items-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500">Compose</button>
                         </div>
@@ -53,7 +77,8 @@
                                     <p class="mt-1 text-xs text-gray-500 line-clamp-2" x-text="email.snippet"></p>
                                 </button>
                             </template>
-                            <div x-show="emails.length === 0" class="p-4 text-sm text-gray-500">No emails to display.</div>
+                            <div x-show="emails.length === 0 && selectedAccountId" class="p-4 text-sm text-gray-500">No emails to display.</div>
+                            <div x-show="!selectedAccountId" class="p-4 text-sm text-gray-500">Please select an email account to view emails.</div>
                         </div>
                     </div>
                     <div class="md:col-span-2 h-full overflow-y-auto">
@@ -86,42 +111,103 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Zoho Account Form -->
+        <x-zoho-account-form />
     </div>
 
     <script>
         function emailApp() {
             return {
-                accounts: [
-                    { id: 1, label: 'Zoho - sales@acme.com' },
-                ],
-                selectedAccountId: 1,
+                showZohoForm: false,
+                isAddingAccount: false,
+                zohoForm: {
+                    email: '',
+                    password: '',
+                    remember: false
+                },
+                accounts: @json($emailAccounts),
+                selectedAccountId: null,
                 folders: ['Inbox', 'Sent', 'Drafts', 'Trash', 'Spam'],
                 selectedFolder: 'Inbox',
-                emails: [
-                    {
-                        id: 101,
-                        from: 'alice@example.com',
-                        subject: 'Welcome to the team!',
-                        time: '09:20',
-                        snippet: 'Hi John, great to have you on board. Let\'s catch up... ',
-                        body: '<p>Hi John,<br/>Great to have you on board.<br/><br/>Regards,<br/>Alice</p>'
-                    },
-                    {
-                        id: 102,
-                        from: 'github@notifications.com',
-                        subject: 'Build passed on main',
-                        time: '08:05',
-                        snippet: 'Your CI workflow run completed successfully.',
-                        body: '<p>Your CI workflow run completed successfully.</p>'
-                    }
-                ],
+                startDate: '',
+                endDate: '',
+                emails: [],
                 selectedEmail: null,
                 loadEmails() {
-                    // TODO: Fetch emails for selected account/folder via API
+                    if (!this.selectedAccountId) {
+                        this.emails = [];
+                        return;
+                    }
+                    
+                    fetch(`/emails/sync/${this.selectedAccountId}?folder=${this.selectedFolder}&limit=50`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                this.emails = data.emails;
+                            } else {
+                                console.error('Error loading emails:', data.message);
+                                this.emails = [];
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading emails:', error);
+                            this.emails = [];
+                        });
+                    
                     this.selectedEmail = null;
                 },
                 syncEmails() {
-                    // TODO: Trigger backend sync route then refresh list
+                    if (!this.selectedAccountId) {
+                        alert('Please select an email account first.');
+                        return;
+                    }
+                    
+                    // Validate date range
+                    if (this.startDate && this.endDate && this.startDate > this.endDate) {
+                        alert('Start date cannot be after end date.');
+                        return;
+                    }
+                    
+                    // Show loading state
+                    const syncButton = document.querySelector('button[\\@click="syncEmails"]');
+                    const originalText = syncButton.textContent;
+                    syncButton.textContent = 'Syncing...';
+                    syncButton.disabled = true;
+                    
+                    // Build query parameters
+                    let queryParams = `folder=${this.selectedFolder}&limit=100`;
+                    if (this.startDate) {
+                        queryParams += `&start_date=${this.startDate}`;
+                    }
+                    if (this.endDate) {
+                        queryParams += `&end_date=${this.endDate}`;
+                    }
+                    
+                    fetch(`/emails/sync/${this.selectedAccountId}?${queryParams}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            this.emails = data.emails;
+                            alert(data.message);
+                        } else {
+                            alert('Error syncing emails: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error syncing emails:', error);
+                        alert('An error occurred while syncing emails.');
+                    })
+                    .finally(() => {
+                        syncButton.textContent = originalText;
+                        syncButton.disabled = false;
+                    });
                 },
                 composeMail() {
                     // TODO: Open compose modal/route
@@ -134,6 +220,44 @@
                 },
                 deleteEmail(email) {
                     // TODO: Call delete endpoint then remove from list
+                },
+                async addZohoAccount() {
+                    this.isAddingAccount = true;
+                    
+                    try {
+                        const response = await fetch('/auth/zoho/add', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                            },
+                            body: JSON.stringify(this.zohoForm)
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            // Add the new account to the accounts list
+                            this.accounts.push({
+                                id: data.account.id,
+                                label: `Zoho - ${data.account.email}`
+                            });
+                            
+                            // Reset form and close modal
+                            this.zohoForm = { email: '', password: '', remember: false };
+                            this.showZohoForm = false;
+                            
+                            // Show success message
+                            alert(data.message);
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    } catch (error) {
+                        console.error('Error adding Zoho account:', error);
+                        alert('An error occurred while adding the account.');
+                    } finally {
+                        this.isAddingAccount = false;
+                    }
                 }
             }
         }

@@ -2,15 +2,25 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AuthController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\EmailAccountController;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
 Route::get('/dashboard', function () {
-    return view('dashboard');
+    $emailAccounts = \App\Models\EmailAccount::where('user_id', auth()->id())
+        ->get()
+        ->map(function ($account) {
+            return [
+                'id' => $account->id,
+                'label' => ucfirst($account->provider) . ' - ' . $account->email
+            ];
+        });
+    
+    return view('dashboard', compact('emailAccounts'));
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
@@ -18,7 +28,15 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
+    // Email account management routes
+    Route::resource('accounts', EmailAccountController::class);
+    Route::post('/accounts/{account}/test-connection', [EmailAccountController::class, 'testConnection'])->name('accounts.test-connection');
+    Route::post('/accounts/{account}/test-authentication', [EmailAccountController::class, 'testAuthentication'])->name('accounts.test-authentication');
+
     Route::post('/emails/send', [EmailController::class, 'send'])->name('emails.send');
+    Route::get('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.get');
+    Route::post('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.post');
+    Route::post('/auth/zoho/add', [AuthController::class, 'addZohoAccount'])->name('auth.zoho.add');
 });
 
 require __DIR__.'/auth.php';

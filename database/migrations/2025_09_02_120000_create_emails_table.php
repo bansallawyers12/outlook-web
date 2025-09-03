@@ -16,9 +16,13 @@ return new class extends Migration
             $table->foreignId('account_id')->constrained('email_accounts')->onDelete('cascade');
             $table->string('from_email')->nullable();
             $table->string('subject')->nullable();
+            $table->text('body')->nullable();
+            $table->string('folder')->default('Inbox');
+            $table->dateTime('received_at')->nullable();
             $table->dateTime('date')->nullable();
             $table->timestamps();
 
+            $table->index(['account_id', 'folder']);
             $table->index(['account_id', 'subject']);
         });
     }

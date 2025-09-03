@@ -13,6 +13,7 @@ class EmailAccount extends Model
         'user_id',
         'provider',
         'email',
+        'password',
         'access_token',
         'refresh_token',
     ];
