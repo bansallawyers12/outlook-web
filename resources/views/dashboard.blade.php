@@ -176,10 +176,15 @@
                                     <label for="endDate" class="sr-only">End Date</label>
                                     <input type="date" id="endDate" x-model="endDate" class="rounded-md border-gray-300 text-sm" placeholder="End date">
                                 </div>
+                                <div class="hidden md:block">
+                                    <label for="searchQuery" class="sr-only">Search</label>
+                                    <input type="text" id="searchQuery" x-model="searchQuery" @keydown.enter.prevent="loadEmails" class="rounded-md border-gray-300 text-sm w-64" placeholder="Search subject, from, body...">
+                                </div>
                             </div>
                         </div>
                         <div class="flex gap-2">
                             <button type="button" @click="syncEmails" class="inline-flex items-center rounded-md border border-blue-600 text-blue-700 bg-white px-3 py-2 text-sm font-semibold hover:bg-blue-50">Sync</button>
+                            <button type="button" @click="syncAllFolders" class="inline-flex items-center rounded-md border border-indigo-600 text-indigo-700 bg-white px-3 py-2 text-sm font-semibold hover:bg-indigo-50">Sync All</button>
                             <button type="button" @click="openCompose()" class="inline-flex items-center rounded-md border border-emerald-600 text-emerald-700 bg-white px-3 py-2 text-sm font-semibold hover:bg-emerald-50">Compose</button>
                         </div>
                     </div>
@@ -454,6 +459,7 @@
                 selectedAccountId: null,
                 folders: ['Inbox', 'Sent', 'Drafts', 'Trash', 'Spam'],
                 selectedFolder: 'Inbox',
+                searchQuery: '',
                 startDate: '',
                 endDate: '',
                 emails: [],
@@ -495,7 +501,11 @@
                         return;
                     }
                     
-                    fetch(`/emails/sync/${this.selectedAccountId}?folder=${this.selectedFolder}&limit=50`)
+                    const params = new URLSearchParams({ folder: this.selectedFolder, limit: 50 });
+                    if (this.startDate) params.set('start_date', this.startDate);
+                    if (this.endDate) params.set('end_date', this.endDate);
+                    if (this.searchQuery) params.set('q', this.searchQuery);
+                    fetch(`/emails/sync/${this.selectedAccountId}?${params.toString()}`)
                         .then(response => response.json())
                         .then(data => {
                             if (data.success) {
@@ -538,6 +548,9 @@
                     if (this.endDate) {
                         queryParams += `&end_date=${this.endDate}`;
                     }
+                    if (this.searchQuery) {
+                        queryParams += `&q=${encodeURIComponent(this.searchQuery)}`;
+                    }
                     
                     fetch(`/emails/sync/${this.selectedAccountId}?${queryParams}`, {
                         method: 'POST',
@@ -562,6 +575,48 @@
                     .finally(() => {
                         syncButton.textContent = originalText;
                         syncButton.disabled = false;
+                    });
+                },
+                syncAllFolders() {
+                    if (!this.selectedAccountId) {
+                        alert('Please select an email account first.');
+                        return;
+                    }
+                    if (this.startDate && this.endDate && this.startDate > this.endDate) {
+                        alert('Start date cannot be after end date.');
+                        return;
+                    }
+                    const btn = event.currentTarget;
+                    const original = btn.textContent;
+                    btn.textContent = 'Syncing All...';
+                    btn.disabled = true;
+                    let queryParams = `folder=all&limit=100`;
+                    if (this.startDate) queryParams += `&start_date=${this.startDate}`;
+                    if (this.endDate) queryParams += `&end_date=${this.endDate}`;
+                    if (this.searchQuery) queryParams += `&q=${encodeURIComponent(this.searchQuery)}`;
+                    fetch(`/emails/sync/${this.selectedAccountId}?${queryParams}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        }
+                    })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.success) {
+                            this.loadEmails();
+                            alert(res.message || 'Sync complete.');
+                        } else {
+                            alert('Sync All failed: ' + (res.message || 'Unknown error'));
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        alert('An error occurred while syncing all folders.');
+                    })
+                    .finally(() => {
+                        btn.textContent = original;
+                        btn.disabled = false;
                     });
                 },
                 openCompose(prefill = {}) {

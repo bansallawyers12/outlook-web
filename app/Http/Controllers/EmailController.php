@@ -98,9 +98,10 @@ class EmailController extends Controller
             ->firstOrFail();
 
         $folder = $request->get('folder', 'Inbox');
-        $limit = min($request->get('limit', 50), 200); // Max 200 emails per sync
+        $limit = min($request->get('limit', 50), 200); // Max 200 emails per sync/list
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
+        $q = trim((string) $request->get('q', ''));
 
         try {
             if ($request->isMethod('post')) {
@@ -111,7 +112,7 @@ class EmailController extends Controller
                 }
 
                 $script = base_path('sync_emails.py');
-
+                
                 // Get the correct authentication token/password
                 $authToken = $account->access_token;
                 if (!$authToken && $account->password) {
@@ -124,98 +125,113 @@ class EmailController extends Controller
                     }
                 }
 
-                $args = [
-                    $pythonPath,
-                    $script,
-                    $account->provider,
-                    $account->email,
-                    $authToken,
-                    $folder,
-                    $limit
-                ];
-
-                // Add date range parameters if provided
-                if ($startDate) {
-                    $args[] = $startDate;
-                }
-                if ($endDate) {
-                    $args[] = $endDate;
+                // Determine folders to sync
+                $foldersToSync = [];
+                if (strtolower($folder) === 'all') {
+                    $foldersToSync = ['Inbox', 'Sent', 'Drafts', 'Trash', 'Spam'];
+                } else {
+                    $foldersToSync = [$folder];
                 }
 
-                // Log sync attempt
-                Log::info("Starting email sync via controller", [
-                    'account_id' => $accountId,
-                    'email' => $account->email,
-                    'provider' => $account->provider,
-                    'folder' => $folder,
-                    'limit' => $limit
-                ]);
+                $allSyncedEmails = [];
+                $debugOutputs = [];
 
-                $process = new Process($args, base_path());
-                $process->setTimeout(120); // 2 minutes timeout for sync
-                
-                // Set environment variables to help with DNS resolution
-                $env = [
-                    'PATH' => getenv('PATH'),
-                    'SYSTEMROOT' => getenv('SYSTEMROOT'),
-                    'WINDIR' => getenv('WINDIR'),
-                    'TEMP' => getenv('TEMP'),
-                    'TMP' => getenv('TMP'),
-                    'PYTHONPATH' => getenv('PYTHONPATH'),
-                    'PYTHONIOENCODING' => 'utf-8',
-                ];
-                
-                // Add DNS-related environment variables if available
-                if (getenv('DNS_SERVERS')) {
-                    $env['DNS_SERVERS'] = getenv('DNS_SERVERS');
-                }
-                
-                $process->setEnv($env);
-                $process->run();
+                foreach ($foldersToSync as $folderName) {
+                    $args = [
+                        $pythonPath,
+                        $script,
+                        $account->provider,
+                        $account->email,
+                        $authToken,
+                        $folderName,
+                        $limit
+                    ];
 
-                // Capture both stdout and stderr
-                $output = trim($process->getOutput());
-                $errorOutput = trim($process->getErrorOutput());
+                    // Add date range parameters if provided
+                    if ($startDate) {
+                        $args[] = $startDate;
+                    }
+                    if ($endDate) {
+                        $args[] = $endDate;
+                    }
 
-                // Log debug information from stderr
-                if (!empty($errorOutput)) {
-                    Log::info("Python script debug output", ['debug_output' => $errorOutput]);
-                }
-
-                if (!$process->isSuccessful()) {
-                    Log::error("Email sync failed via controller", [
+                    // Log sync attempt
+                    Log::info("Starting email sync via controller", [
                         'account_id' => $accountId,
-                        'error_output' => $errorOutput,
-                        'stdout' => $output,
-                        'exit_code' => $process->getExitCode()
+                        'email' => $account->email,
+                        'provider' => $account->provider,
+                        'folder' => $folderName,
+                        'limit' => $limit
                     ]);
+
+                    $process = new Process($args, base_path());
+                    $process->setTimeout(120); // 2 minutes timeout for sync
                     
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Sync failed: ' . ($errorOutput ?: $output),
-                        'debug_output' => $errorOutput,
-                        'emails' => []
-                    ], 422);
+                    // Set environment variables to help with DNS resolution
+                    $env = [
+                        'PATH' => getenv('PATH'),
+                        'SYSTEMROOT' => getenv('SYSTEMROOT'),
+                        'WINDIR' => getenv('WINDIR'),
+                        'TEMP' => getenv('TEMP'),
+                        'TMP' => getenv('TMP'),
+                        'PYTHONPATH' => getenv('PYTHONPATH'),
+                        'PYTHONIOENCODING' => 'utf-8',
+                    ];
+                    
+                    // Add DNS-related environment variables if available
+                    if (getenv('DNS_SERVERS')) {
+                        $env['DNS_SERVERS'] = getenv('DNS_SERVERS');
+                    }
+                    
+                    $process->setEnv($env);
+                    $process->run();
+
+                    // Capture both stdout and stderr
+                    $output = trim($process->getOutput());
+                    $errorOutput = trim($process->getErrorOutput());
+                    if (!empty($errorOutput)) {
+                        $debugOutputs[] = $errorOutput;
+                    }
+
+                    if (!$process->isSuccessful()) {
+                        Log::error("Email sync failed via controller", [
+                            'account_id' => $accountId,
+                            'folder' => $folderName,
+                            'error_output' => $errorOutput,
+                            'stdout' => $output,
+                            'exit_code' => $process->getExitCode()
+                        ]);
+                        continue; // Continue with other folders instead of failing all
+                    }
+
+                    // Parse the JSON response from Python script
+                    $synced = json_decode($output, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        Log::error("Invalid JSON from Python script via controller", [
+                            'account_id' => $accountId,
+                            'folder' => $folderName,
+                            'json_error' => json_last_error_msg(),
+                            'output' => $output,
+                        ]);
+                        continue;
+                    }
+
+                    if (isset($synced['error'])) {
+                        Log::error("Email sync error via controller", [
+                            'account_id' => $accountId,
+                            'folder' => $folderName,
+                            'error' => $synced['error'],
+                            'debug_info' => $synced['debug_info'] ?? null
+                        ]);
+                        continue;
+                    }
+
+                    if (is_array($synced)) {
+                        $allSyncedEmails = array_merge($allSyncedEmails, $synced);
+                    }
                 }
 
-                // Parse the JSON response from Python script
-                $syncedEmails = json_decode($output, true);
-
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    Log::error("Invalid JSON from Python script via controller", [
-                        'account_id' => $accountId,
-                        'json_error' => json_last_error_msg(),
-                        'output' => $output,
-                        'debug_output' => $errorOutput
-                    ]);
-                    
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Invalid response from sync script: ' . json_last_error_msg(),
-                        'debug_output' => $errorOutput,
-                        'emails' => []
-                    ], 422);
-                }
+                $syncedEmails = $allSyncedEmails;
 
                 if (isset($syncedEmails['error'])) {
                     Log::error("Email sync error via controller", [
@@ -368,12 +384,44 @@ class EmailController extends Controller
                 }
             }
 
-            // Return emails from database
-            $emails = Email::where('account_id', $accountId)
-                ->where('folder', $folder)
+            // Build listing query with optional folder, dates, and search
+            $query = Email::where('account_id', $accountId);
+
+            if (strtolower($folder) !== 'all') {
+                $query->where('folder', $folder);
+            }
+
+            if ($startDate) {
+                $query->where(function ($q2) use ($startDate) {
+                    $q2->whereDate('received_at', '>=', $startDate)
+                        ->orWhereDate('date', '>=', $startDate);
+                });
+            }
+            if ($endDate) {
+                $query->where(function ($q2) use ($endDate) {
+                    $q2->whereDate('received_at', '<=', $endDate)
+                        ->orWhereDate('date', '<=', $endDate);
+                });
+            }
+
+            if (!empty($q)) {
+                $like = '%' . str_replace(['%','_'], ['\\%','\\_'], $q) . '%';
+                $query->where(function ($q3) use ($like) {
+                    $q3->where('subject', 'like', $like)
+                        ->orWhere('from_email', 'like', $like)
+                        ->orWhere('to_email', 'like', $like)
+                        ->orWhere('cc', 'like', $like)
+                        ->orWhere('reply_to', 'like', $like)
+                        ->orWhere('text_body', 'like', $like)
+                        ->orWhere('body', 'like', $like);
+                });
+            }
+
+            // Return emails from database (select minimal columns for speed)
+            $emails = $query
                 ->orderBy('received_at', 'desc')
                 ->limit($limit)
-                ->get()
+                ->get(['id', 'from_email', 'to_email', 'subject', 'received_at', 'date', 'created_at', 'body', 'text_body', 'html_body', 'cc', 'reply_to', 'headers'])
                 ->map(function ($email) {
                     return [
                         'id' => $email->id,
