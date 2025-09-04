@@ -36,13 +36,19 @@ Route::middleware('auth')->group(function () {
     Route::post('/accounts/{account}/test-authentication', [EmailAccountController::class, 'testAuthentication'])->name('accounts.test-authentication');
 
     Route::post('/emails/send', [EmailController::class, 'send'])->name('emails.send');
+    Route::post('/emails/save-draft', [EmailController::class, 'saveDraft'])->name('emails.save-draft');
+    Route::get('/emails/drafts', [EmailController::class, 'drafts'])->name('emails.drafts');
+    Route::get('/emails/draft/{id}', [EmailController::class, 'getDraft'])->name('emails.draft.get');
+    Route::delete('/emails/draft/{id}', [EmailController::class, 'deleteDraft'])->name('emails.draft.delete');
+    Route::get('/emails/reply/{id}', [EmailController::class, 'getReplyData'])->name('emails.reply.get');
     Route::get('/emails/compose', [EmailController::class, 'compose'])->name('emails.compose');
     Route::get('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.get');
     Route::post('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.post');
     Route::post('/auth/zoho/add', [AuthController::class, 'addZohoAccount'])->name('auth.zoho.add');
 
-    // Attachment download
+    // Attachment download and view
     Route::get('/attachments/{id}/download', [AttachmentController::class, 'download'])->name('attachments.download');
+    Route::get('/attachments/{id}/view', [AttachmentController::class, 'view'])->name('attachments.view');
 
     // Labels minimal API for UI
     Route::get('/labels', [LabelController::class, 'index'])->name('labels.index');

@@ -16,6 +16,7 @@ class Attachment extends Model
         'content_type',
         'file_size',
         'file_path',
+        'storage_path',
         'content_id',
         'is_inline',
         'description',

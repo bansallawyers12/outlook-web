@@ -172,12 +172,48 @@
                                     @if($attachments && $attachments->count())
                                         <div class="mt-3 border-t pt-3">
                                             <div class="text-sm font-medium text-gray-700 mb-2">Attachments ({{ $attachments->count() }})</div>
-                                            <div class="flex flex-wrap gap-2">
+                                            <div class="space-y-2">
                                                 @foreach($attachments as $att)
-                                                    <a href="{{ route('attachments.download', $att->id) }}" class="inline-flex items-center px-3 py-1.5 rounded border text-sm text-gray-700 hover:bg-gray-100">
-                                                        {{ $att->filename }}
-                                                        <span class="ml-2 text-xs text-gray-500">({{ $att->formatted_file_size }})</span>
-                                                    </a>
+                                                    <div class="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                                                        <div class="flex items-center space-x-2">
+                                                            <!-- File type icon -->
+                                                            <div class="flex-shrink-0">
+                                                                @if($att->isImage())
+                                                                    <div class="w-6 h-6 bg-blue-100 rounded flex items-center justify-center">
+                                                                        <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                @elseif($att->isPdf())
+                                                                    <div class="w-6 h-6 bg-red-100 rounded flex items-center justify-center">
+                                                                        <svg class="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                @else
+                                                                    <div class="w-6 h-6 bg-gray-100 rounded flex items-center justify-center">
+                                                                        <svg class="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                @endif
+                                                            </div>
+                                                            <div>
+                                                                <div class="text-sm font-medium text-gray-900">{{ $att->display_name ?: $att->filename }}</div>
+                                                                <div class="text-xs text-gray-500">{{ $att->formatted_file_size }}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex items-center space-x-1">
+                                                            @if($att->canPreview())
+                                                                <a href="{{ route('attachments.view', $att->id) }}" target="_blank" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="View">
+                                                                    View
+                                                                </a>
+                                                            @endif
+                                                            <a href="{{ route('attachments.download', $att->id) }}" class="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200" title="Download">
+                                                                Download
+                                                            </a>
+                                                        </div>
+                                                    </div>
                                                 @endforeach
                                             </div>
                                         </div>

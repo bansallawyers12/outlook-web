@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\EmailAccount;
 use App\Models\Email;
+use App\Models\EmailDraft;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
@@ -38,6 +39,9 @@ class EmailController extends Controller
             'to' => ['required', 'email'],
             'subject' => ['required', 'string'],
             'body' => ['required', 'string'],
+            'cc' => ['nullable', 'string'],
+            'bcc' => ['nullable', 'string'],
+            'attachments.*' => ['nullable', 'file', 'max:10240'], // Max 10MB per file
         ]);
 
         $account = EmailAccount::where('id', $validated['account_id'])
@@ -63,6 +67,23 @@ class EmailController extends Controller
             }
         }
 
+        // Handle attachments
+        $attachmentPaths = [];
+        if ($request->hasFile('attachments')) {
+            $attachments = $request->file('attachments');
+            foreach ($attachments as $attachment) {
+                if ($attachment->isValid()) {
+                    $filename = $attachment->getClientOriginalName();
+                    $path = $attachment->store('temp/attachments', 'local');
+                    $attachmentPaths[] = [
+                        'path' => storage_path('app/' . $path),
+                        'filename' => $filename,
+                        'mime_type' => $attachment->getMimeType(),
+                    ];
+                }
+            }
+        }
+
         $args = [
             $pythonPath,
             $script,
@@ -72,11 +93,43 @@ class EmailController extends Controller
             $validated['to'],
             $validated['subject'],
             $validated['body'],
+            $validated['cc'] ?? '',
+            $validated['bcc'] ?? '',
+            json_encode($attachmentPaths),
         ];
 
         $process = new Process($args, base_path());
         $process->setTimeout(30);
+        
+        // Set environment variables for better Windows compatibility
+        $env = [
+            'PATH' => getenv('PATH'),
+            'SYSTEMROOT' => getenv('SYSTEMROOT'),
+            'WINDIR' => getenv('WINDIR'),
+            'TEMP' => getenv('TEMP'),
+            'TMP' => getenv('TMP'),
+            'PYTHONPATH' => getenv('PYTHONPATH'),
+            'PYTHONIOENCODING' => 'utf-8',
+            'PYTHONUNBUFFERED' => '1',
+        ];
+        
+        // Add Windows-specific environment variables
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $env['COMSPEC'] = getenv('COMSPEC');
+            $env['PATHEXT'] = getenv('PATHEXT');
+            $env['PROCESSOR_ARCHITECTURE'] = getenv('PROCESSOR_ARCHITECTURE');
+            $env['PROCESSOR_IDENTIFIER'] = getenv('PROCESSOR_IDENTIFIER');
+        }
+        
+        $process->setEnv($env);
         $process->run();
+
+        // Clean up temporary attachment files
+        foreach ($attachmentPaths as $attachment) {
+            if (file_exists($attachment['path'])) {
+                unlink($attachment['path']);
+            }
+        }
 
         if (!$process->isSuccessful()) {
             return response()->json([
@@ -84,6 +137,9 @@ class EmailController extends Controller
                 'error' => $process->getErrorOutput() ?: $process->getOutput(),
             ], 422);
         }
+
+        // Store sent email in database for tracking
+        $this->storeSentEmail($request, Auth::id(), $account->id);
 
         return response()->json([
             'ok' => true,
@@ -417,12 +473,28 @@ class EmailController extends Controller
                 });
             }
 
-            // Return emails from database (select minimal columns for speed)
+            // Return emails from database with attachments
             $emails = $query
+                ->with('attachments')
                 ->orderBy('received_at', 'desc')
                 ->limit($limit)
                 ->get(['id', 'from_email', 'to_email', 'subject', 'received_at', 'date', 'created_at', 'body', 'text_body', 'html_body', 'cc', 'reply_to', 'headers'])
                 ->map(function ($email) {
+                    $attachments = $email->attachments->map(function ($attachment) {
+                        return [
+                            'id' => $attachment->id,
+                            'filename' => $attachment->filename,
+                            'display_name' => $attachment->display_name,
+                            'content_type' => $attachment->content_type,
+                            'file_size' => $attachment->file_size,
+                            'formatted_file_size' => $attachment->formatted_file_size,
+                            'extension' => $attachment->extension,
+                            'is_inline' => $attachment->is_inline,
+                            'can_preview' => $attachment->canPreview(),
+                            'preview_type' => $attachment->getPreviewType(),
+                        ];
+                    });
+
                     return [
                         'id' => $email->id,
                         'from' => $email->from_email,
@@ -437,9 +509,9 @@ class EmailController extends Controller
                         'cc' => $email->cc,
                         'reply_to' => $email->reply_to,
                         'headers' => $email->headers,
-                        'has_attachment' => false, // TODO: implement attachment detection
+                        'has_attachment' => $attachments->count() > 0,
                         'is_flagged' => false, // TODO: implement flag detection
-                        'attachments' => []
+                        'attachments' => $attachments->toArray()
                     ];
                 });
 
@@ -455,6 +527,178 @@ class EmailController extends Controller
                 'message' => 'Error: ' . $e->getMessage(),
                 'emails' => []
             ], 500);
+        }
+    }
+
+    /**
+     * Save email as draft
+     */
+    public function saveDraft(Request $request)
+    {
+        $validated = $request->validate([
+            'account_id' => ['nullable', 'integer', 'exists:email_accounts,id'],
+            'to' => ['nullable', 'email'],
+            'cc' => ['nullable', 'string'],
+            'bcc' => ['nullable', 'string'],
+            'subject' => ['nullable', 'string', 'max:255'],
+            'body' => ['nullable', 'string'],
+            'attachments' => ['nullable', 'array'],
+        ]);
+
+        try {
+            $userId = Auth::id();
+            
+            // Store draft in database
+            $draft = EmailDraft::create([
+                'user_id' => $userId,
+                'account_id' => $validated['account_id'] ?? null,
+                'to_email' => $validated['to'] ?? null,
+                'cc_email' => $validated['cc'] ?? null,
+                'bcc_email' => $validated['bcc'] ?? null,
+                'subject' => $validated['subject'] ?? null,
+                'message' => $validated['body'] ?? null,
+                'attachments' => $validated['attachments'] ?? [],
+            ]);
+
+            Log::info('Email draft saved', [
+                'draft_id' => $draft->id,
+                'user_id' => $userId,
+                'subject' => $validated['subject'] ?? null,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Draft saved successfully!',
+                'draft_id' => $draft->id,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to save draft', [
+                'error' => $e->getMessage(),
+                'request_data' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save draft: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get user's email drafts
+     */
+    public function drafts()
+    {
+        $userId = Auth::id();
+        
+        $drafts = EmailDraft::forUser($userId)
+            ->with('emailAccount')
+            ->orderBy('created_at', 'desc')
+            ->paginate(10);
+
+        return response()->json([
+            'success' => true,
+            'drafts' => $drafts->items(),
+            'pagination' => [
+                'current_page' => $drafts->currentPage(),
+                'last_page' => $drafts->lastPage(),
+                'per_page' => $drafts->perPage(),
+                'total' => $drafts->total(),
+            ]
+        ]);
+    }
+
+    /**
+     * Get draft data for editing
+     */
+    public function getDraft(int $id)
+    {
+        $userId = Auth::id();
+        $draft = EmailDraft::where('user_id', $userId)->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'draft' => $draft
+        ]);
+    }
+
+    /**
+     * Delete a draft
+     */
+    public function deleteDraft(int $id)
+    {
+        $userId = Auth::id();
+        $draft = EmailDraft::where('user_id', $userId)->findOrFail($id);
+        $draft->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Draft deleted successfully'
+        ]);
+    }
+
+    /**
+     * Get reply data for an email
+     */
+    public function getReplyData(int $id)
+    {
+        $userId = Auth::id();
+        $email = Email::where('user_id', $userId)->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'subject' => 'Re: ' . ($email->subject ?: '(No subject)'),
+            'to_email' => $email->from_email,
+            'sender_name' => $email->sender_name,
+            'original_message' => $email->text_body ?: $email->body,
+            'original_date' => $email->received_at ? $email->received_at->format('Y-m-d H:i') : '',
+        ]);
+    }
+
+    /**
+     * Store sent email in database for tracking
+     */
+    private function storeSentEmail(Request $request, int $userId, int $accountId)
+    {
+        try {
+            // Create a mail message record
+            $email = Email::create([
+                'user_id' => $userId,
+                'account_id' => $accountId,
+                'subject' => $request->input('subject'),
+                'from_email' => $request->input('from_email'),
+                'sender_email' => $request->input('from_email'),
+                'sender_name' => Auth::user()->name,
+                'to_email' => $request->input('to'),
+                'recipients' => [$request->input('to')],
+                'text_body' => $request->input('body'),
+                'html_body' => nl2br($request->input('body')),
+                'sent_date' => now(),
+                'status' => 'sent',
+                'folder' => 'sent',
+            ]);
+
+            // Store attachments if any
+            if ($request->hasFile('attachments')) {
+                foreach ($request->file('attachments') as $attachment) {
+                    $path = $attachment->store('email-attachments', 'public');
+                    
+                    $email->attachments()->create([
+                        'filename' => $attachment->getClientOriginalName(),
+                        'display_name' => $attachment->getClientOriginalName(),
+                        'storage_path' => $path,
+                        'content_type' => $attachment->getMimeType(),
+                        'file_size' => $attachment->getSize(),
+                    ]);
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::warning('Failed to store sent email', [
+                'error' => $e->getMessage(),
+                'mail_data' => $request->all(),
+            ]);
         }
     }
 }

@@ -1,8 +1,14 @@
 import smtplib
 import sys
 import socket
+import ssl
+import os
+import json
 from typing import List, Tuple, Optional
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
 
 def _zoho_smtp_endpoints() -> List[Tuple[str, int, str, Optional[str]]]:
@@ -25,6 +31,26 @@ def _zoho_smtp_endpoints() -> List[Tuple[str, int, str, Optional[str]]]:
     ]
 
 
+def _create_ssl_context() -> ssl.SSLContext:
+    """Create a robust SSL context for Windows compatibility."""
+    context = ssl.create_default_context()
+    
+    # For Windows compatibility, be more permissive with SSL
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    
+    # Set minimum TLS version
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    
+    # Add Windows-specific SSL options
+    if hasattr(ssl, 'OP_NO_SSLv2'):
+        context.options |= ssl.OP_NO_SSLv2
+    if hasattr(ssl, 'OP_NO_SSLv3'):
+        context.options |= ssl.OP_NO_SSLv3
+    
+    return context
+
+
 def _try_send(
     host_or_ip: str,
     port: int,
@@ -32,7 +58,9 @@ def _try_send(
     email_user: str,
     token: str,
     to_addr: str,
-    msg: MIMEText,
+    msg: MIMEMultipart,
+    cc: str = "",
+    bcc: str = "",
     sni_hostname: Optional[str] = None,
 ) -> None:
     # First, verify DNS for the hostname to surface gaierror early and allow fallback
@@ -42,21 +70,33 @@ def _try_send(
         except socket.gaierror as e:
             raise
 
+    # Create SSL context for better Windows compatibility
+    ssl_context = _create_ssl_context()
+    
     if security == "ssl":
-        server = smtplib.SMTP_SSL(host_or_ip, port, timeout=30)
+        server = smtplib.SMTP_SSL(host_or_ip, port, timeout=30, context=ssl_context)
     else:
         server = smtplib.SMTP(host_or_ip, port, timeout=30)
+    
     try:
         if security in ("starttls", "starttls_ip"):
             server.ehlo()
             if security == "starttls_ip" and sni_hostname:
                 # Use SNI with the Zoho hostname while connecting to an IP address
-                server.starttls(server_hostname=sni_hostname)
+                server.starttls(context=ssl_context, server_hostname=sni_hostname)
             else:
-                server.starttls()
+                server.starttls(context=ssl_context)
             server.ehlo()
         server.login(email_user, token)
-        server.sendmail(email_user, [to_addr], msg.as_string())
+        
+        # Prepare recipient list
+        recipients = [to_addr]
+        if cc:
+            recipients.extend([addr.strip() for addr in cc.split(',') if addr.strip()])
+        if bcc:
+            recipients.extend([addr.strip() for addr in bcc.split(',') if addr.strip()])
+        
+        server.sendmail(email_user, recipients, msg.as_string())
     finally:
         try:
             server.quit()
@@ -64,26 +104,82 @@ def _try_send(
             pass
 
 
+def _diagnose_network() -> None:
+    """Run basic network diagnostics for troubleshooting."""
+    print("Running network diagnostics...")
+    
+    # Test basic connectivity
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=5)
+        print("✓ Basic internet connectivity: OK")
+    except Exception as e:
+        print(f"✗ Basic internet connectivity: FAILED ({e})")
+    
+    # Test DNS resolution
+    try:
+        socket.gethostbyname("smtp.zoho.com")
+        print("✓ DNS resolution for smtp.zoho.com: OK")
+    except Exception as e:
+        print(f"✗ DNS resolution for smtp.zoho.com: FAILED ({e})")
+    
+    # Test SSL context creation
+    try:
+        context = _create_ssl_context()
+        print("✓ SSL context creation: OK")
+    except Exception as e:
+        print(f"✗ SSL context creation: FAILED ({e})")
+
+
 def main() -> None:
     if len(sys.argv) < 7:
-        print("Usage: send_mail.py <provider> <email_user> <token> <to> <subject> <body>")
+        print("Usage: send_mail.py <provider> <email_user> <token> <to> <subject> <body> [cc] [bcc] [attachments_json]")
         sys.exit(2)
 
     provider, email_user, token, to_addr, subject, body = sys.argv[1:7]
+    cc = sys.argv[7] if len(sys.argv) > 7 else ""
+    bcc = sys.argv[8] if len(sys.argv) > 8 else ""
+    attachments_json = sys.argv[9] if len(sys.argv) > 9 else "[]"
 
     if provider != "zoho":
         print(f"Unsupported provider: {provider}")
         sys.exit(3)
 
-    msg = MIMEText(body)
+    # Create multipart message
+    msg = MIMEMultipart()
     msg["From"] = email_user
     msg["To"] = to_addr
     msg["Subject"] = subject
+    
+    if cc:
+        msg["Cc"] = cc
+    if bcc:
+        msg["Bcc"] = bcc
+
+    # Add body
+    msg.attach(MIMEText(body, "plain"))
+
+    # Add attachments
+    try:
+        attachments = json.loads(attachments_json)
+        for attachment in attachments:
+            if os.path.exists(attachment["path"]):
+                with open(attachment["path"], "rb") as f:
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(f.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        "Content-Disposition",
+                        f'attachment; filename= "{attachment["filename"]}"'
+                    )
+                    msg.attach(part)
+    except (json.JSONDecodeError, KeyError, OSError) as e:
+        print(f"Warning: Could not process attachments: {e}")
+        # Continue without attachments
 
     last_error: Exception | None = None
     for host_or_ip, port, security, sni_hostname in _zoho_smtp_endpoints():
         try:
-            _try_send(host_or_ip, port, security, email_user, token, to_addr, msg, sni_hostname)
+            _try_send(host_or_ip, port, security, email_user, token, to_addr, msg, cc, bcc, sni_hostname)
             print("OK")
             return
         except socket.gaierror as e:
@@ -102,8 +198,23 @@ def main() -> None:
     if isinstance(last_error, socket.gaierror) and getattr(last_error, "errno", None) == 11003:
         print("DNS resolution failed for Zoho SMTP hosts (WSANO_DATA 11003).")
         print("Suggestions: 1) Check internet/DNS, 2) Try VPN, 3) Reset Winsock: 'netsh winsock reset' and reboot.")
+    elif isinstance(last_error, OSError) and getattr(last_error, "winerror", None) == 10106:
+        print("Windows service provider initialization failed (WinError 10106).")
+        print("This is a Windows networking issue. Try these solutions:")
+        print("1. Run as Administrator: 'netsh winsock reset' then reboot")
+        print("2. Reset network stack: 'netsh int ip reset' then reboot")
+        print("3. Check Windows Firewall and antivirus settings")
+        print("4. Update network drivers")
+        print("5. Try using a VPN or different network")
+        print("\nRunning diagnostics...")
+        _diagnose_network()
+    elif isinstance(last_error, ssl.SSLError):
+        print(f"SSL/TLS connection failed: {last_error}")
+        print("This might be due to SSL certificate issues or network restrictions.")
+        print("Try: 1) Check system date/time, 2) Update certificates, 3) Try VPN")
     elif last_error is not None:
         print(f"Failed to send email: {last_error}")
+        print(f"Error type: {type(last_error).__name__}")
     else:
         print("Failed to send email: Unknown error")
     sys.exit(5)

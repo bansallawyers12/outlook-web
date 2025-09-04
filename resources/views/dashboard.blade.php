@@ -338,45 +338,71 @@
                                                 </svg>
                                                 Attachments (<span x-text="selectedEmail.attachments.length"></span>)
                                             </h3>
-                                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            <div class="space-y-3">
                                                 <template x-for="attachment in selectedEmail.attachments" :key="attachment.id || attachment.name">
-                                                    <div class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                                        <div class="flex-shrink-0">
-                                                            <!-- File type icon based on extension -->
-                                                            <div class="w-8 h-8 flex items-center justify-center rounded bg-gray-100">
-                                                                <svg x-show="attachment.type && attachment.type.startsWith('image/')" class="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                                <svg x-show="attachment.type && attachment.type.includes('pdf')" class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                                <svg x-show="attachment.type && (attachment.type.includes('word') || attachment.type.includes('document'))" class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                                <svg x-show="attachment.type && attachment.type.includes('excel')" class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                                <svg x-show="!attachment.type || (!attachment.type.startsWith('image/') && !attachment.type.includes('pdf') && !attachment.type.includes('word') && !attachment.type.includes('document') && !attachment.type.includes('excel'))" class="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path>
-                                                                </svg>
+                                                    <div class="attachment-item bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                                        <div class="flex items-start justify-between">
+                                                            <div class="flex items-start space-x-3 flex-1">
+                                                                <!-- File type icon -->
+                                                                <div class="flex-shrink-0">
+                                                                    <div x-show="attachment.type && attachment.type.startsWith('image/')" class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                                                        <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                    <div x-show="attachment.type && attachment.type.includes('pdf')" class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                                                                        <svg class="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                    <div x-show="attachment.type && (attachment.type.includes('word') || attachment.type.includes('document'))" class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                                                                        <svg class="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                    <div x-show="!attachment.type || (!attachment.type.startsWith('image/') && !attachment.type.includes('pdf') && !attachment.type.includes('word') && !attachment.type.includes('document'))" class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                                                                        <svg class="w-6 h-6 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                </div>
+
+                                                                <!-- File info -->
+                                                                <div class="flex-1 min-w-0">
+                                                                    <h4 class="text-sm font-medium text-gray-900 truncate" x-text="attachment.name || attachment.filename || 'Unknown file'"></h4>
+                                                                    <p class="text-xs text-gray-500 mt-1">
+                                                                        <span x-text="attachment.size ? formatFileSize(attachment.size) : ''"></span>
+                                                                        <span x-show="attachment.type" x-text="' • ' + attachment.type"></span>
+                                                                    </p>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        <div class="ml-3 flex-1 min-w-0">
-                                                            <p class="text-sm font-medium text-gray-900 truncate" x-text="attachment.name || attachment.filename || 'Unknown file'"></p>
-                                                            <p class="text-xs text-gray-500" x-text="attachment.size ? formatFileSize(attachment.size) : ''"></p>
-                                                        </div>
-                                                        <div class="flex items-center gap-1 ml-2">
-                                                            <button @click="downloadAttachment(attachment)" class="p-1 text-gray-400 hover:text-gray-600" title="Download">
-                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                                </svg>
-                                                            </button>
-                                                            <button x-show="attachment.type && attachment.type.startsWith('image/')" @click="viewImage(attachment)" class="p-1 text-gray-400 hover:text-gray-600" title="View">
-                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                                                </svg>
-                                                            </button>
+
+                                                            <!-- Action buttons -->
+                                                            <div class="flex items-center space-x-2 ml-4">
+                                                                <button 
+                                                                    x-show="attachment.type && (attachment.type.startsWith('image/') || attachment.type.includes('pdf'))"
+                                                                    @click="viewAttachment(attachment)"
+                                                                    class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                                    title="Preview attachment"
+                                                                >
+                                                                    <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"></path>
+                                                                        <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                    View
+                                                                </button>
+                                                                
+                                                                <button 
+                                                                    @click="downloadAttachment(attachment)"
+                                                                    class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                                    title="Download attachment"
+                                                                >
+                                                                    <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                    Download
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </template>
@@ -396,6 +422,36 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Attachment Preview Modal -->
+        <div x-show="showAttachmentPreview" class="fixed inset-0 z-50 flex items-center justify-center" style="display:none">
+            <div class="absolute inset-0 bg-black bg-opacity-50" @click="showAttachmentPreview = false"></div>
+            <div class="relative bg-white w-full max-w-4xl mx-4 rounded-lg shadow-lg max-h-[90vh] overflow-hidden">
+                <div class="border-b px-4 py-3 flex items-center justify-between">
+                    <h3 class="text-lg font-semibold" x-text="previewAttachment ? (previewAttachment.name || previewAttachment.filename || 'Attachment') : ''"></h3>
+                    <button class="text-gray-500 hover:text-gray-700" @click="showAttachmentPreview = false">✕</button>
+                </div>
+                <div class="p-4 max-h-[calc(90vh-120px)] overflow-auto">
+                    <div x-show="previewAttachment && previewAttachment.type && previewAttachment.type.startsWith('image/')" class="text-center">
+                        <img :src="`/attachments/${previewAttachment.id}/view`" :alt="previewAttachment.name || previewAttachment.filename" class="max-w-full h-auto mx-auto" style="max-height: 70vh;">
+                    </div>
+                    <div x-show="previewAttachment && previewAttachment.type && previewAttachment.type.includes('pdf')" class="w-full">
+                        <iframe :src="`/attachments/${previewAttachment.id}/view#toolbar=0&navpanes=0&scrollbar=0`" class="w-full h-96 border-0" :title="previewAttachment.name || previewAttachment.filename"></iframe>
+                    </div>
+                </div>
+                <div class="border-t px-4 py-3 flex items-center justify-end space-x-3">
+                    <button @click="downloadAttachment(previewAttachment)" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                        Download
+                    </button>
+                    <button @click="showAttachmentPreview = false" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        Close
+                    </button>
                 </div>
             </div>
         </div>
@@ -658,6 +714,8 @@
                     this.openCompose({ subject, body: quoted });
                 },
                 showCompose: false,
+                showAttachmentPreview: false,
+                previewAttachment: null,
                 compose: { to: '', cc: '', bcc: '', subject: '', body: '' },
                 deleteEmail(email) {
                     // TODO: Call delete endpoint then remove from list
@@ -759,14 +817,28 @@
                     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
                 },
                 downloadAttachment(attachment) {
-                    // TODO: Implement attachment download
-                    console.log('Download attachment:', attachment);
-                    alert('Download functionality will be implemented');
+                    if (attachment.id) {
+                        // Create a temporary link to download the attachment
+                        const link = document.createElement('a');
+                        link.href = `/attachments/${attachment.id}/download`;
+                        link.download = attachment.filename || attachment.name || 'attachment';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    } else {
+                        console.error('Attachment ID not found');
+                        alert('Unable to download attachment: ID not found');
+                    }
                 },
-                viewImage(attachment) {
-                    // TODO: Implement image viewer
-                    console.log('View image:', attachment);
-                    alert('Image viewer will be implemented');
+                viewAttachment(attachment) {
+                    if (attachment.id) {
+                        // Set the preview attachment and show modal
+                        this.previewAttachment = attachment;
+                        this.showAttachmentPreview = true;
+                    } else {
+                        console.error('Attachment ID not found');
+                        alert('Unable to view attachment: ID not found');
+                    }
                 },
                 sendEmail({ to, subject, body }) {
                     const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
