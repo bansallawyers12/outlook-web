@@ -18,8 +18,10 @@ A Laravel-based web application for managing email accounts and sending emails t
 - **OAuth & Password Auth**: OAuth (Zoho) and classic username/password
 - **Connection & Auth Tests**: Validate connectivity and credentials before saving
 - **IMAP Email Sync**: Incremental sync with Message-ID de-duplication
+- **Local Email Storage**: Automatic local folder creation and email archiving
 - **SMTP Sending**: Provider-aware SMTP via Python script with TLS
 - **Attachments**: Store and download attachments to/from `storage/app/attachments`
+- **Email Drafts**: Save and manage email drafts for later composition
 - **Labels/Tags**: Manage labels and email-label relationships
 - **Rich Email Storage**: Persist headers, HTML, text, dates, flags, and metadata
 - **Network Diagnostics**: DNS, socket, TLS, IMAP diagnostics with JSON reports
@@ -170,32 +172,61 @@ Note: If you're running under XAMPP/Apache, point your virtual host/document roo
 - Navigate to `Emails > Sync` for the chosen account.
 - Optionally specify folder, limit, or date range.
 - Start sync and monitor progress; errors appear in logs and UI.
+- **Local Storage**: All synced emails are automatically saved to local folders for offline access.
 
 ### 3) View and manage emails
 - `Emails` page lists messages with pagination and filters.
 - Click a message to view details, headers, HTML, and attachments.
 - Download attachments stored under `storage/app/attachments`.
+- **Local Access**: All emails are stored locally in organized folder structure under `storage/app/email-accounts/`.
 
-### 4) Labels
+### 4) Email Drafts
+- Save email compositions as drafts for later editing and sending.
+- Access drafts from the compose interface.
+- Edit and resume draft emails at any time.
+- Delete drafts when no longer needed.
+
+### 5) Labels
 - Create and manage labels under `Labels`.
 - Assign labels to emails to organize your inbox.
 
-### 5) Send email
+### 6) Send email
 - Use `Compose` (or API endpoint) to send via SMTP.
+- Save drafts for later completion and editing.
+- Reply to emails with pre-filled recipient and subject.
 - Ensure your account has valid SMTP settings or OAuth token.
 
-### 6) Diagnostics
+### 7) Local Email Storage
+- **Automatic Folder Creation**: Each email account gets its own local folder structure
+- **Organized Storage**: Emails are saved in folders matching your email provider's structure (Inbox, Sent, Drafts, etc.)
+- **Offline Access**: All synced emails are available locally even without internet connection
+- **File Format**: Emails are stored as `.eml` files in RFC 2822 format for compatibility
+- **Storage Location**: `storage/app/email-accounts/{sanitized-email-address}/`
+- **Test Functionality**: Use `php artisan emails:test-folders` to verify folder operations
+
+### 8) Diagnostics
 - Run network diagnostics:
   ```bash
   python test_network.py imap.zoho.com 993
   ```
 - See JSON reports written at repository root (e.g., `network_test_*.json`).
+- Test local folder functionality:
+  ```bash
+  php artisan emails:test-folders [account_id]
+  ```
+- Clear all email data for fresh start:
+  ```bash
+  php artisan emails:refresh --force
+  ```
 
 ## Processes
 
-- **Sync Process**: Validate network → connect IMAP → fetch headers/bodies → parse parts → store email/attachments → record Message-ID to prevent duplicates.
+- **Sync Process**: Validate network → connect IMAP → fetch headers/bodies → parse parts → store email/attachments → save to local folders → record Message-ID to prevent duplicates.
 - **Send Process**: Build SMTP connection with provider settings → TLS → authenticate (password or OAuth token if supported) → send → record result.
+- **Draft Process**: Save email composition state → store in database → allow editing and resuming → send when ready.
+- **Local Storage Process**: Create account folders → organize emails by folder → save as .eml files → maintain folder structure.
 - **Labeling Process**: Manage labels in DB and pivot to emails to support many-to-many classification.
+- **Refresh Process**: Clear all email data → remove attachments → reset sync state → prepare for fresh sync.
 
 ### Testing
 
@@ -213,11 +244,22 @@ composer run test
   - `User` - User authentication and profile management
   - `EmailAccount` - Email account storage with OAuth and password support
   - `Email` - Synchronized email storage with full metadata
+  - `EmailDraft` - Email draft storage for composing messages
+  - `Attachment` - Email attachment management and storage
+  - `Label` - Email labeling and categorization system
 - **Controllers**: 
-  - `EmailController` - Handles email sending and synchronization
+  - `EmailController` - Handles email sending, synchronization, and draft management
   - `EmailAccountController` - Manages email account CRUD operations and connection testing
   - `AuthController` - Manages OAuth authentication flows
   - `ProfileController` - User profile management
+  - `AttachmentController` - Handles attachment downloads and viewing
+  - `LabelController` - Manages email labeling and categorization
+- **Services**:
+  - `EmailFolderService` - Manages local folder structure and email file storage
+- **Console Commands**:
+  - `SyncEmails` - Command-line email synchronization
+  - `TestEmailFolders` - Test local folder functionality and email storage
+  - `RefreshEmailData` - Clear all email data and reset sync state for fresh start
 - **Python Scripts**:
   - `send_mail.py` - SMTP email sending with provider-specific configuration
   - `sync_emails.py` - IMAP email synchronization with comprehensive error handling
@@ -231,6 +273,33 @@ Currently supports:
 - **Zoho Mail** (IMAP/SMTP)
 
 Planned support for additional providers through OAuth integration.
+
+### Local Storage Structure
+
+The application automatically creates and maintains a local folder structure for each email account:
+
+```
+storage/app/email-accounts/
+├── {sanitized-email-address}/
+│   ├── Inbox/
+│   │   └── {message-id}.eml
+│   ├── Sent/
+│   ├── Drafts/
+│   ├── Trash/
+│   ├── Spam/
+│   ├── Archive/
+│   ├── Important/ (provider-specific)
+│   └── All Mail/ (provider-specific)
+└── {another-email-address}/
+    └── ...
+```
+
+**Features:**
+- **Automatic Creation**: Folders are created when email accounts are added
+- **Provider-Specific**: Additional folders based on email provider (Gmail, Outlook, Zoho)
+- **Email Files**: Each email is saved as a `.eml` file with sanitized message ID
+- **Offline Access**: All emails remain accessible without internet connection
+- **Backup Friendly**: Easy to backup and restore email data
 
 ### Schedules and Queues
 
@@ -295,17 +364,28 @@ The application uses Python scripts for email operations to leverage existing em
 
 ### Email Operations
 - `POST /emails/send` - Send email through connected account
+- `POST /emails/save-draft` - Save email draft
+- `GET /emails/drafts` - List email drafts
+- `GET /emails/draft/{id}` - Get specific email draft
+- `DELETE /emails/draft/{id}` - Delete email draft
+- `GET /emails/reply/{id}` - Get reply data for email
+- `GET /emails/compose` - Show email composition form
 - `GET /emails/sync/{accountId}` - Show email sync form
 - `POST /emails/sync/{accountId}` - Synchronize emails from account
 - `POST /auth/zoho/add` - Add Zoho account via OAuth
 
+### Attachments
+- `GET /attachments/{id}/download` - Download email attachment
+- `GET /attachments/{id}/view` - View email attachment in browser
+
 ### Labels
 - `GET /labels` - List labels
-- `POST /labels` - Create label
-- `PATCH /labels/{label}` - Update label
-- `DELETE /labels/{label}` - Delete label
-- `POST /labels/{label}/attach/{email}` - Attach label to email
-- `DELETE /labels/{label}/detach/{email}` - Detach label from email
+- `POST /labels/apply` - Apply label to email
+- `POST /labels/remove` - Remove label from email
+
+### OAuth
+- `GET /auth/{provider}` - OAuth redirect
+- `GET /auth/{provider}/callback` - OAuth callback
 
 ## Configuration
 
@@ -362,9 +442,11 @@ This project is open-sourced software licensed under the [MIT license](https://o
 - OAuth integration for Zoho is implemented using Laravel Socialite
 - The application uses Laravel's built-in authentication and session management
 - Email accounts support both OAuth tokens and password authentication
+- **Local Email Storage**: All synced emails are automatically saved to local folders for offline access
 - Network diagnostics are available for troubleshooting email connectivity issues
 - All Python scripts use only standard library modules (no external dependencies required)
 - The application includes comprehensive error handling and logging for email operations
+- Email files are stored in RFC 2822 format for maximum compatibility with email clients
 
 ## Troubleshooting
 
@@ -381,7 +463,9 @@ This project is open-sourced software licensed under the [MIT license](https://o
 
 ## Backup & Data
 
-- Back up `database/` (SQLite) or your external DB and `storage/` for attachments.
+- Back up `database/` (SQLite) or your external DB and `storage/` for attachments and local emails.
+- **Local Email Storage**: Back up `storage/app/email-accounts/` to preserve all synced emails.
+- **Attachments**: Stored in `storage/app/attachments/` and `storage/app/email-attachments/`.
 - Logs are in `storage/logs/`; prune or rotate as needed for disk space.
 
 ## FAQ
@@ -389,3 +473,5 @@ This project is open-sourced software licensed under the [MIT license](https://o
 - "Nothing appears after login" → Ensure migrations ran and queues/Vite are running in dev.
 - "Attachments not accessible" → Run `php artisan storage:link` and verify file permissions.
 - "SMTP auth failed" → Confirm provider settings, app passwords, or OAuth tokens are valid and not expired.
+- "Want to start fresh with email data" → Use `php artisan emails:refresh --force` to clear all email data and start over.
+- "Local folders not created" → Use `php artisan emails:test-folders` to verify folder functionality.
