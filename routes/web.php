@@ -44,6 +44,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/emails/compose', [EmailController::class, 'compose'])->name('emails.compose');
     Route::get('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.get');
     Route::post('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.post');
+    Route::post('/emails/bulk-action', [EmailController::class, 'bulkAction'])->name('emails.bulk-action');
     Route::post('/auth/zoho/add', [AuthController::class, 'addZohoAccount'])->name('auth.zoho.add');
 
     // Attachment download and view

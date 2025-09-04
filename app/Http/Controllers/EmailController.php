@@ -193,6 +193,10 @@ class EmailController extends Controller
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
         $q = trim((string) $request->get('q', ''));
+        $searchFields = $request->get('search_fields', 'from,to,subject,body');
+        $hasAttachments = $request->get('has_attachments', false);
+        $isUnread = $request->get('is_unread', false);
+        $isFlagged = $request->get('is_flagged', false);
 
         try {
             if ($request->isMethod('post')) {
@@ -518,15 +522,46 @@ class EmailController extends Controller
 
             if (!empty($q)) {
                 $like = '%' . str_replace(['%','_'], ['\\%','\\_'], $q) . '%';
-                $query->where(function ($q3) use ($like) {
-                    $q3->where('subject', 'like', $like)
-                        ->orWhere('from_email', 'like', $like)
-                        ->orWhere('to_email', 'like', $like)
-                        ->orWhere('cc', 'like', $like)
-                        ->orWhere('reply_to', 'like', $like)
-                        ->orWhere('text_body', 'like', $like)
-                        ->orWhere('body', 'like', $like);
+                $searchFieldsArray = explode(',', $searchFields);
+                
+                $query->where(function ($q3) use ($like, $searchFieldsArray) {
+                    if (in_array('subject', $searchFieldsArray)) {
+                        $q3->orWhere('subject', 'like', $like);
+                    }
+                    if (in_array('from', $searchFieldsArray)) {
+                        $q3->orWhere('from_email', 'like', $like);
+                    }
+                    if (in_array('to', $searchFieldsArray)) {
+                        $q3->orWhere('to_email', 'like', $like);
+                    }
+                    if (in_array('cc', $searchFieldsArray)) {
+                        $q3->orWhere('cc', 'like', $like);
+                    }
+                    if (in_array('reply_to', $searchFieldsArray)) {
+                        $q3->orWhere('reply_to', 'like', $like);
+                    }
+                    if (in_array('body', $searchFieldsArray)) {
+                        $q3->orWhere('text_body', 'like', $like)
+                           ->orWhere('body', 'like', $like);
+                    }
                 });
+            }
+            
+            // Apply additional filters
+            if ($hasAttachments) {
+                $query->whereHas('attachments');
+            }
+            
+            if ($isUnread) {
+                // For now, we'll assume all emails are unread if this filter is applied
+                // TODO: Add read/unread status to emails table
+                $query->where('is_read', false);
+            }
+            
+            if ($isFlagged) {
+                // For now, we'll assume all emails are unflagged if this filter is applied
+                // TODO: Add flagged status to emails table
+                $query->where('is_flagged', true);
             }
 
             // Return emails from database with attachments
@@ -534,7 +569,7 @@ class EmailController extends Controller
                 ->with('attachments')
                 ->orderBy('received_at', 'desc')
                 ->limit($limit)
-                ->get(['id', 'from_email', 'to_email', 'subject', 'received_at', 'date', 'created_at', 'body', 'text_body', 'html_body', 'cc', 'reply_to', 'headers'])
+                ->get(['id', 'from_email', 'to_email', 'subject', 'received_at', 'date', 'created_at', 'body', 'text_body', 'html_body', 'cc', 'reply_to', 'headers', 'is_read', 'is_flagged'])
                 ->map(function ($email) {
                     $attachments = $email->attachments->map(function ($attachment) {
                         return [
@@ -566,7 +601,8 @@ class EmailController extends Controller
                         'reply_to' => $email->reply_to,
                         'headers' => $email->headers,
                         'has_attachment' => $attachments->count() > 0,
-                        'is_flagged' => false, // TODO: implement flag detection
+                        'is_read' => $email->is_read ?? false,
+                        'is_flagged' => $email->is_flagged ?? false,
                         'attachments' => $attachments->toArray()
                     ];
                 });
@@ -582,6 +618,67 @@ class EmailController extends Controller
                 'success' => false,
                 'message' => 'Error: ' . $e->getMessage(),
                 'emails' => []
+            ], 500);
+        }
+    }
+
+    /**
+     * Handle bulk actions on emails
+     */
+    public function bulkAction(Request $request)
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', 'in:mark_read,mark_unread,flag,unflag,delete'],
+            'email_ids' => ['required', 'array'],
+            'email_ids.*' => ['integer', 'exists:emails,id']
+        ]);
+
+        $emailIds = $validated['email_ids'];
+        $action = $validated['action'];
+
+        // Verify all emails belong to the authenticated user
+        $emails = Email::whereIn('id', $emailIds)
+            ->whereHas('emailAccount', function ($query) use ($request) {
+                $query->where('user_id', $request->user()->id);
+            })
+            ->get();
+
+        if ($emails->count() !== count($emailIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Some emails not found or access denied.'
+            ], 403);
+        }
+
+        try {
+            switch ($action) {
+                case 'mark_read':
+                    Email::whereIn('id', $emailIds)->update(['is_read' => true]);
+                    break;
+                case 'mark_unread':
+                    Email::whereIn('id', $emailIds)->update(['is_read' => false]);
+                    break;
+                case 'flag':
+                    Email::whereIn('id', $emailIds)->update(['is_flagged' => true]);
+                    break;
+                case 'unflag':
+                    Email::whereIn('id', $emailIds)->update(['is_flagged' => false]);
+                    break;
+                case 'delete':
+                    Email::whereIn('id', $emailIds)->delete();
+                    break;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Bulk action completed successfully.',
+                'affected_count' => $emails->count()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error performing bulk action: ' . $e->getMessage()
             ], 500);
         }
     }

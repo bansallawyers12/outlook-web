@@ -36,6 +36,7 @@ class Email extends Model
         'file_size',
         'is_important',
         'is_read',
+        'is_flagged',
         'tags',
         'notes',
         'last_accessed_at'
@@ -49,6 +50,7 @@ class Email extends Model
         'recipients' => 'array',
         'is_important' => 'boolean',
         'is_read' => 'boolean',
+        'is_flagged' => 'boolean',
         'last_accessed_at' => 'datetime'
     ];
 

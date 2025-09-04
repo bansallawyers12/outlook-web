@@ -132,7 +132,7 @@
         }
     </style>
 
-    <div class="py-6" x-data="emailApp()">
+    <div class="py-6" x-data="emailApp()" x-init="init()">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             @if (session('success'))
                 <div class="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
@@ -146,52 +146,293 @@
                 </div>
             @endif
 
-            <div class="bg-white border border-gray-200 sm:rounded-lg">
-                <div class="p-4 border-b border-gray-200">
-                    <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div class="flex gap-3 items-center">
-                            <div>
-                                <label for="accountDropdown" class="sr-only">Account</label>
-                                <select id="accountDropdown" x-model="selectedAccountId" @change="loadEmails" class="rounded-md border-gray-300 text-sm">
+            <div class="bg-white border border-gray-200 sm:rounded-lg shadow-sm">
+                <!-- Main Filter Bar -->
+                <div class="p-4 border-b border-gray-200 bg-gray-50">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <!-- Left Side - Primary Filters -->
+                        <div class="flex flex-col sm:flex-row gap-3 flex-1">
+                            <!-- Account Selector -->
+                            <div class="min-w-0 flex-1 sm:max-w-xs">
+                                <label for="accountDropdown" class="block text-xs font-medium text-gray-700 mb-1">Account</label>
+                                <select id="accountDropdown" x-model="selectedAccountId" @change="loadEmails" 
+                                        class="w-full rounded-lg border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">Select an account</option>
                                     <template x-for="acct in accounts" :key="acct.id">
                                         <option :value="acct.id" x-text="acct.label"></option>
                                     </template>
                                 </select>
                             </div>
-                            <div>
-                                <label for="folderDropdown" class="sr-only">Folder</label>
-                                <select id="folderDropdown" x-model="selectedFolder" @change="loadEmails" class="rounded-md border-gray-300 text-sm">
+
+                            <!-- Folder Selector -->
+                            <div class="min-w-0 flex-1 sm:max-w-xs">
+                                <label for="folderDropdown" class="block text-xs font-medium text-gray-700 mb-1">Folder</label>
+                                <select id="folderDropdown" x-model="selectedFolder" @change="loadEmails" 
+                                        class="w-full rounded-lg border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     <template x-for="f in folders" :key="f">
                                         <option :value="f" x-text="f"></option>
                                     </template>
                                 </select>
                             </div>
-                            <div class="flex gap-2 items-center">
-                                <div>
-                                    <label for="startDate" class="sr-only">Start Date</label>
-                                    <input type="date" id="startDate" x-model="startDate" class="rounded-md border-gray-300 text-sm" placeholder="Start date">
+
+                            <!-- Search Bar -->
+                            <div class="min-w-0 flex-1 sm:max-w-md">
+                                <label for="searchQuery" class="block text-xs font-medium text-gray-700 mb-1">Search</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                        </svg>
                                 </div>
-                                <div>
-                                    <label for="endDate" class="sr-only">End Date</label>
-                                    <input type="date" id="endDate" x-model="endDate" class="rounded-md border-gray-300 text-sm" placeholder="End date">
+                                    <input type="text" id="searchQuery" x-model="searchQuery" 
+                                           @keydown.enter.prevent="loadEmails" 
+                                           @input="updateSearchSuggestions()"
+                                           @focus="showSuggestions = true"
+                                           @blur="setTimeout(() => showSuggestions = false, 200)"
+                                           class="w-full pl-10 pr-20 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                           placeholder="Search emails...">
+                                    
+                                    <!-- Search Suggestions Dropdown -->
+                                    <div x-show="showSuggestions && (searchSuggestions.length > 0 || recentSearches.length > 0)" 
+                                         x-transition:enter="transition ease-out duration-100"
+                                         x-transition:enter-start="transform opacity-0 scale-95"
+                                         x-transition:enter-end="transform opacity-100 scale-100"
+                                         x-transition:leave="transition ease-in duration-75"
+                                         x-transition:leave-start="transform opacity-100 scale-100"
+                                         x-transition:leave-end="transform opacity-0 scale-95"
+                                         class="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                        
+                                        <!-- Recent Searches -->
+                                        <div x-show="recentSearches.length > 0" class="p-2">
+                                            <div class="text-xs font-medium text-gray-500 mb-1">Recent Searches</div>
+                                            <template x-for="search in recentSearches.slice(0, 3)" :key="search">
+                                                <button @click="applySuggestion(search)" 
+                                                        class="w-full text-left px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                                                    <span x-text="search"></span>
+                                                </button>
+                                            </template>
                                 </div>
-                                <div class="hidden md:block">
-                                    <label for="searchQuery" class="sr-only">Search</label>
-                                    <input type="text" id="searchQuery" x-model="searchQuery" @keydown.enter.prevent="loadEmails" class="rounded-md border-gray-300 text-sm w-64" placeholder="Search subject, from, body...">
+                                        
+                                        <!-- Search Suggestions -->
+                                        <div x-show="searchSuggestions.length > 0" class="p-2 border-t border-gray-200">
+                                            <div class="text-xs font-medium text-gray-500 mb-1">Suggestions</div>
+                                            <template x-for="suggestion in searchSuggestions" :key="suggestion">
+                                                <button @click="applySuggestion(suggestion)" 
+                                                        class="w-full text-left px-2 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                                                    <span x-text="suggestion"></span>
+                                                </button>
+                                            </template>
+                                </div>
+                            </div>
+                                    
+                                    <div class="absolute inset-y-0 right-0 flex items-center">
+                                        <button x-show="searchQuery" @click="searchQuery = ''; loadEmails()" 
+                                                class="p-1 text-gray-400 hover:text-gray-600">
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                            </svg>
+                                        </button>
+                                        <div class="border-l border-gray-300 mx-2 h-4"></div>
+                                        <button @click="saveSearch()" 
+                                                class="p-1 text-gray-400 hover:text-gray-600" 
+                                                title="Save search">
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                                            </svg>
+                                        </button>
+                        </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="flex gap-2">
-                            <button type="button" @click="syncEmails" class="inline-flex items-center rounded-md border border-blue-600 text-blue-700 bg-white px-3 py-2 text-sm font-semibold hover:bg-blue-50">Sync</button>
-                            <button type="button" @click="syncAllFolders" class="inline-flex items-center rounded-md border border-indigo-600 text-indigo-700 bg-white px-3 py-2 text-sm font-semibold hover:bg-indigo-50">Sync All</button>
-                            <button type="button" @click="openCompose()" class="inline-flex items-center rounded-md border border-emerald-600 text-emerald-700 bg-white px-3 py-2 text-sm font-semibold hover:bg-emerald-50">Compose</button>
+
+                        <!-- Right Side - Action Buttons -->
+                        <div class="flex gap-2 flex-shrink-0 flex-wrap">
+                            <button type="button" @click="toggleAdvancedFilters" 
+                                    class="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                                </svg>
+                                Filters
+                            </button>
+                            <button type="button" @click="syncEmails" 
+                                    class="inline-flex items-center px-3 py-2 border border-blue-600 text-blue-700 bg-white rounded-lg text-sm font-medium hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Sync
+                            </button>
+                            <button type="button" @click="syncAllFolders" 
+                                    class="inline-flex items-center px-3 py-2 border border-indigo-600 text-indigo-700 bg-white rounded-lg text-sm font-medium hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Sync All
+                            </button>
+                            <button type="button" @click="openCompose()" 
+                                    class="inline-flex items-center px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Compose
+                            </button>
                         </div>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 h-[70vh]">
-                    <div class="md:col-span-1 border-r border-gray-200 overflow-y-auto">
-                        <div>
+
+                <!-- Bulk Actions Bar -->
+                <div x-show="selectedEmails.length > 0" x-transition:enter="transition ease-out duration-200" 
+                     x-transition:enter-start="opacity-0 transform -translate-y-1" 
+                     x-transition:enter-end="opacity-100 transform translate-y-0"
+                     x-transition:leave="transition ease-in duration-150" 
+                     x-transition:leave-start="opacity-100 transform translate-y-0" 
+                     x-transition:leave-end="opacity-0 transform -translate-y-1"
+                     class="border-b border-gray-200 bg-blue-50 p-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-medium text-gray-700">
+                                <span x-text="selectedEmails.length"></span> selected
+                            </span>
+                            <button @click="selectAllEmails()" class="text-sm text-blue-600 hover:text-blue-800">
+                                Select All
+                            </button>
+                            <button @click="clearSelection()" class="text-sm text-gray-600 hover:text-gray-800">
+                                Clear
+                            </button>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button @click="bulkMarkAsRead()" 
+                                    class="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">
+                                Mark as Read
+                            </button>
+                            <button @click="bulkMarkAsUnread()" 
+                                    class="inline-flex items-center px-3 py-1.5 bg-gray-600 text-white rounded text-sm font-medium hover:bg-gray-700">
+                                Mark as Unread
+                            </button>
+                            <button @click="bulkFlag()" 
+                                    class="inline-flex items-center px-3 py-1.5 bg-yellow-600 text-white rounded text-sm font-medium hover:bg-yellow-700">
+                                Flag
+                            </button>
+                            <button @click="bulkDelete()" 
+                                    class="inline-flex items-center px-3 py-1.5 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Filters Panel -->
+                <div x-show="showAdvancedFilters" x-transition:enter="transition ease-out duration-200" 
+                     x-transition:enter-start="opacity-0 transform -translate-y-1" 
+                     x-transition:enter-end="opacity-100 transform translate-y-0"
+                     x-transition:leave="transition ease-in duration-150" 
+                     x-transition:leave-start="opacity-100 transform translate-y-0" 
+                     x-transition:leave-end="opacity-0 transform -translate-y-1"
+                     class="border-b border-gray-200 bg-gray-50 p-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Date Range -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-medium text-gray-700">Date Range</label>
+                        <div class="flex gap-2">
+                                <input type="date" x-model="startDate" 
+                                       class="flex-1 rounded-lg border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                       placeholder="Start date">
+                                <input type="date" x-model="endDate" 
+                                       class="flex-1 rounded-lg border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                       placeholder="End date">
+                        </div>
+                        </div>
+
+                        <!-- Search Fields -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-medium text-gray-700">Search In</label>
+                            <div class="space-y-1">
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="searchFields.from" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">From</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="searchFields.to" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">To</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="searchFields.subject" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">Subject</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="searchFields.body" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">Body</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Email Filters -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-medium text-gray-700">Filters</label>
+                            <div class="space-y-1">
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="filters.hasAttachments" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">Has Attachments</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="filters.isUnread" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">Unread Only</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="filters.isFlagged" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">Flagged</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-medium text-gray-700">Quick Actions</label>
+                            <div class="space-y-1">
+                                <button @click="applyQuickFilter('today')" 
+                                        class="block w-full text-left px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                                    Today
+                                </button>
+                                <button @click="applyQuickFilter('week')" 
+                                        class="block w-full text-left px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                                    This Week
+                                </button>
+                                <button @click="applyQuickFilter('month')" 
+                                        class="block w-full text-left px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
+                                    This Month
+                                </button>
+                                <button @click="clearAllFilters()" 
+                                        class="block w-full text-left px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded">
+                                    Clear All
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Apply Filters Button -->
+                    <div class="mt-4 flex justify-end">
+                        <button @click="applyFilters()" 
+                                class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            Apply Filters
+                        </button>
+                    </div>
+                </div>
+                <div class="flex flex-col md:flex-row h-[70vh]">
+                    <div class="md:w-1/3 w-full border-r border-gray-200 overflow-y-auto">
+                        <!-- Loading Indicator -->
+                        <div x-show="isLoading" class="p-4 text-center">
+                            <div class="inline-flex items-center px-4 py-2 text-sm text-gray-600">
+                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Loading emails...
+                            </div>
+                        </div>
+                        
+                        <div x-show="!isLoading">
                             <template x-for="group in groupedEmails" :key="group.date">
                                 <div>
                                     <!-- Date Header -->
@@ -202,26 +443,35 @@
                                     <!-- Emails for this date -->
                                     <div class="divide-y divide-gray-100">
                                         <template x-for="email in group.emails" :key="email.id">
+                                            <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
+                                                 :class="{ 'bg-blue-50 border-l-4 border-blue-500': selectedEmail && selectedEmail.id === email.id }">
+                                                <input type="checkbox" 
+                                                       :value="email.id" 
+                                                       x-model="selectedEmails"
+                                                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                                             <button type="button"
-                                                    class="w-full text-left px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 transition-colors"
-                                                    :class="{ 'bg-blue-50 border-l-4 border-blue-500': selectedEmail && selectedEmail.id === email.id }"
+                                                        class="flex-1 text-left"
                                                     @click="selectedEmail = email">
                                                 <div class="flex items-start justify-between gap-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center gap-2">
-                                                            <p class="text-sm font-semibold text-gray-900 truncate" x-text="email.from"></p>
+                                                            <p class="text-sm font-semibold truncate" 
+                                                               :class="email.is_read ? 'text-gray-600' : 'text-gray-900 font-bold'" 
+                                                               x-text="email.from"></p>
                                                             <div class="flex items-center gap-1">
                                                                 <!-- Attachment icon -->
                                                                 <svg x-show="email.hasAttachment" class="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                                                                     <path fill-rule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clip-rule="evenodd"></path>
                                                                 </svg>
                                                                 <!-- Flag icon -->
-                                                                <svg x-show="email.isFlagged" class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                <svg x-show="email.is_flagged" class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
                                                                     <path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clip-rule="evenodd"></path>
                                                                 </svg>
                                                             </div>
                                                         </div>
-                                                        <p class="mt-0.5 text-sm text-gray-900 truncate" x-text="email.subject"></p>
+                                                        <p class="mt-0.5 text-sm truncate" 
+                                                           :class="email.is_read ? 'text-gray-600' : 'text-gray-900 font-semibold'" 
+                                                           x-text="email.subject"></p>
                                                         <p class="mt-1 text-xs text-gray-500 line-clamp-2" x-text="email.snippet"></p>
                                                     </div>
                                                     <div class="flex flex-col items-end gap-1">
@@ -237,6 +487,7 @@
                                                     </div>
                                                 </div>
                                             </button>
+                                            </div>
                                         </template>
                                     </div>
                                 </div>
@@ -244,8 +495,9 @@
                             <div x-show="emails.length === 0 && selectedAccountId" class="p-4 text-sm text-gray-500">No emails to display.</div>
                             <div x-show="!selectedAccountId" class="p-4 text-sm text-gray-500">Please select an email account to view emails.</div>
                         </div>
+                        </div>
                     </div>
-                    <div class="md:col-span-2 h-full overflow-y-auto bg-white">
+                    <div class="md:w-2/3 w-full h-full overflow-y-auto bg-white">
                         <template x-if="selectedEmail">
                             <div class="h-full flex flex-col">
                                 <!-- Email Header -->
@@ -544,6 +796,24 @@
                 endDate: '',
                 emails: [],
                 selectedEmail: null,
+                showAdvancedFilters: false,
+                searchFields: {
+                    from: true,
+                    to: true,
+                    subject: true,
+                    body: true
+                },
+                filters: {
+                    hasAttachments: false,
+                    isUnread: false,
+                    isFlagged: false
+                },
+                savedSearches: [],
+                isLoading: false,
+                selectedEmails: [],
+                showSuggestions: false,
+                searchSuggestions: [],
+                recentSearches: [],
                 get groupedEmails() {
                     if (!this.emails || this.emails.length === 0) return [];
                     
@@ -581,10 +851,23 @@
                         return;
                     }
                     
+                    this.isLoading = true;
                     const params = new URLSearchParams({ folder: this.selectedFolder, limit: 50 });
                     if (this.startDate) params.set('start_date', this.startDate);
                     if (this.endDate) params.set('end_date', this.endDate);
                     if (this.searchQuery) params.set('q', this.searchQuery);
+                    
+                    // Add search field filters
+                    const searchFields = Object.keys(this.searchFields).filter(field => this.searchFields[field]);
+                    if (searchFields.length > 0) {
+                        params.set('search_fields', searchFields.join(','));
+                    }
+                    
+                    // Add additional filters
+                    if (this.filters.hasAttachments) params.set('has_attachments', '1');
+                    if (this.filters.isUnread) params.set('is_unread', '1');
+                    if (this.filters.isFlagged) params.set('is_flagged', '1');
+                    
                     fetch(`/emails/sync/${this.selectedAccountId}?${params.toString()}`)
                         .then(response => response.json())
                         .then(data => {
@@ -598,6 +881,9 @@
                         .catch(error => {
                             console.error('Error loading emails:', error);
                             this.emails = [];
+                        })
+                        .finally(() => {
+                            this.isLoading = false;
                         });
                     
                     this.selectedEmail = null;
@@ -922,6 +1208,312 @@
                         console.error(err);
                         alert('An error occurred while sending email.');
                     });
+                },
+                
+                // Advanced filtering methods
+                toggleAdvancedFilters() {
+                    this.showAdvancedFilters = !this.showAdvancedFilters;
+                },
+                
+                applyFilters() {
+                    this.addToRecentSearches(this.searchQuery);
+                    this.loadEmails();
+                    this.showAdvancedFilters = false;
+                },
+                
+                applyQuickFilter(period) {
+                    const today = new Date();
+                    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    
+                    switch(period) {
+                        case 'today':
+                            this.startDate = startOfDay.toISOString().split('T')[0];
+                            this.endDate = today.toISOString().split('T')[0];
+                            break;
+                        case 'week':
+                            const startOfWeek = new Date(startOfDay);
+                            startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
+                            this.startDate = startOfWeek.toISOString().split('T')[0];
+                            this.endDate = today.toISOString().split('T')[0];
+                            break;
+                        case 'month':
+                            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                            this.startDate = startOfMonth.toISOString().split('T')[0];
+                            this.endDate = today.toISOString().split('T')[0];
+                            break;
+                    }
+                    
+                    this.loadEmails();
+                },
+                
+                clearAllFilters() {
+                    this.searchQuery = '';
+                    this.startDate = '';
+                    this.endDate = '';
+                    this.searchFields = {
+                        from: true,
+                        to: true,
+                        subject: true,
+                        body: true
+                    };
+                    this.filters = {
+                        hasAttachments: false,
+                        isUnread: false,
+                        isFlagged: false
+                    };
+                    this.loadEmails();
+                },
+                
+                saveSearch() {
+                    const searchName = prompt('Enter a name for this search:');
+                    if (searchName) {
+                        const search = {
+                            id: Date.now(),
+                            name: searchName,
+                            query: this.searchQuery,
+                            startDate: this.startDate,
+                            endDate: this.endDate,
+                            searchFields: { ...this.searchFields },
+                            filters: { ...this.filters },
+                            folder: this.selectedFolder
+                        };
+                        this.savedSearches.push(search);
+                        this.saveSearchesToStorage();
+                    }
+                },
+                
+                loadSavedSearch(search) {
+                    this.searchQuery = search.query || '';
+                    this.startDate = search.startDate || '';
+                    this.endDate = search.endDate || '';
+                    this.searchFields = { ...search.searchFields };
+                    this.filters = { ...search.filters };
+                    this.selectedFolder = search.folder || 'Inbox';
+                    this.loadEmails();
+                },
+                
+                deleteSavedSearch(searchId) {
+                    this.savedSearches = this.savedSearches.filter(s => s.id !== searchId);
+                    this.saveSearchesToStorage();
+                },
+                
+                saveSearchesToStorage() {
+                    localStorage.setItem('emailSavedSearches', JSON.stringify(this.savedSearches));
+                },
+                
+                loadSearchesFromStorage() {
+                    const saved = localStorage.getItem('emailSavedSearches');
+                    if (saved) {
+                        this.savedSearches = JSON.parse(saved);
+                    }
+                    
+                    const recent = localStorage.getItem('emailRecentSearches');
+                    if (recent) {
+                        this.recentSearches = JSON.parse(recent);
+                    }
+                },
+                
+                updateSearchSuggestions() {
+                    if (!this.searchQuery || this.searchQuery.length < 2) {
+                        this.searchSuggestions = [];
+                        return;
+                    }
+                    
+                    // Common search suggestions based on query
+                    const commonSuggestions = [
+                        'from:',
+                        'to:',
+                        'subject:',
+                        'has:attachment',
+                        'is:unread',
+                        'is:read',
+                        'is:flagged',
+                        'before:',
+                        'after:',
+                        'size:large',
+                        'size:small'
+                    ];
+                    
+                    this.searchSuggestions = commonSuggestions
+                        .filter(suggestion => suggestion.toLowerCase().includes(this.searchQuery.toLowerCase()))
+                        .slice(0, 5);
+                },
+                
+                applySuggestion(suggestion) {
+                    this.searchQuery = suggestion;
+                    this.showSuggestions = false;
+                    this.addToRecentSearches(suggestion);
+                    this.loadEmails();
+                },
+                
+                addToRecentSearches(query) {
+                    if (!query || query.trim() === '') return;
+                    
+                    // Remove if already exists
+                    this.recentSearches = this.recentSearches.filter(s => s !== query);
+                    
+                    // Add to beginning
+                    this.recentSearches.unshift(query);
+                    
+                    // Keep only last 10
+                    this.recentSearches = this.recentSearches.slice(0, 10);
+                    
+                    // Save to localStorage
+                    localStorage.setItem('emailRecentSearches', JSON.stringify(this.recentSearches));
+                },
+                
+                // Bulk action methods
+                selectAllEmails() {
+                    this.selectedEmails = this.emails.map(email => email.id);
+                },
+                
+                clearSelection() {
+                    this.selectedEmails = [];
+                },
+                
+                bulkMarkAsRead() {
+                    if (this.selectedEmails.length === 0) return;
+                    
+                    fetch('/emails/bulk-action', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        },
+                        body: JSON.stringify({
+                            action: 'mark_read',
+                            email_ids: this.selectedEmails
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Update local email data
+                            this.emails.forEach(email => {
+                                if (this.selectedEmails.includes(email.id)) {
+                                    email.is_read = true;
+                                }
+                            });
+                            this.selectedEmails = [];
+                            alert('Emails marked as read successfully.');
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('An error occurred while updating emails.');
+                    });
+                },
+                
+                bulkMarkAsUnread() {
+                    if (this.selectedEmails.length === 0) return;
+                    
+                    fetch('/emails/bulk-action', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        },
+                        body: JSON.stringify({
+                            action: 'mark_unread',
+                            email_ids: this.selectedEmails
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Update local email data
+                            this.emails.forEach(email => {
+                                if (this.selectedEmails.includes(email.id)) {
+                                    email.is_read = false;
+                                }
+                            });
+                            this.selectedEmails = [];
+                            alert('Emails marked as unread successfully.');
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('An error occurred while updating emails.');
+                    });
+                },
+                
+                bulkFlag() {
+                    if (this.selectedEmails.length === 0) return;
+                    
+                    fetch('/emails/bulk-action', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        },
+                        body: JSON.stringify({
+                            action: 'flag',
+                            email_ids: this.selectedEmails
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Update local email data
+                            this.emails.forEach(email => {
+                                if (this.selectedEmails.includes(email.id)) {
+                                    email.is_flagged = true;
+                                }
+                            });
+                            this.selectedEmails = [];
+                            alert('Emails flagged successfully.');
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('An error occurred while updating emails.');
+                    });
+                },
+                
+                bulkDelete() {
+                    if (this.selectedEmails.length === 0) return;
+                    
+                    if (!confirm(`Are you sure you want to delete ${this.selectedEmails.length} email(s)?`)) {
+                        return;
+                    }
+                    
+                    fetch('/emails/bulk-action', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        },
+                        body: JSON.stringify({
+                            action: 'delete',
+                            email_ids: this.selectedEmails
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Remove deleted emails from local data
+                            this.emails = this.emails.filter(email => !this.selectedEmails.includes(email.id));
+                            this.selectedEmails = [];
+                            alert('Emails deleted successfully.');
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('An error occurred while deleting emails.');
+                    });
+                },
+
+                // Initialize the app
+                init() {
+                    this.loadSearchesFromStorage();
                 }
 
             }
