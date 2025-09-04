@@ -61,3 +61,4 @@ require __DIR__.'/auth.php';
 // OAuth routes
 Route::get('/auth/{provider}', [AuthController::class, 'redirect'])->name('oauth.redirect');
 Route::get('/auth/{provider}/callback', [AuthController::class, 'callback'])->name('oauth.callback');
+

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\EmailAccount;
 use App\Models\Email;
 use App\Models\EmailDraft;
+use App\Services\EmailFolderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
@@ -76,7 +77,7 @@ class EmailController extends Controller
                     $filename = $attachment->getClientOriginalName();
                     $path = $attachment->store('temp/attachments', 'local');
                     $attachmentPaths[] = [
-                        'path' => storage_path('app/' . $path),
+                        'path' => storage_path('app/private/' . $path),
                         'filename' => $filename,
                         'mime_type' => $attachment->getMimeType(),
                     ];
@@ -124,7 +125,22 @@ class EmailController extends Controller
         $process->setEnv($env);
         $process->run();
 
-        // Clean up temporary attachment files
+        // Log the process details for debugging
+        Log::info('Email sending process completed', [
+            'account_id' => $account->id,
+            'account_email' => $account->email,
+            'provider' => $account->provider,
+            'to' => $validated['to'],
+            'subject' => $validated['subject'],
+            'is_successful' => $process->isSuccessful(),
+            'exit_code' => $process->getExitCode(),
+            'output' => $process->getOutput(),
+            'error_output' => $process->getErrorOutput(),
+            'has_attachments' => !empty($attachmentPaths),
+            'attachment_count' => count($attachmentPaths)
+        ]);
+
+        // Clean up temporary attachment files AFTER processing is complete
         foreach ($attachmentPaths as $attachment) {
             if (file_exists($attachment['path'])) {
                 unlink($attachment['path']);
@@ -132,9 +148,28 @@ class EmailController extends Controller
         }
 
         if (!$process->isSuccessful()) {
+            $errorMessage = $process->getErrorOutput() ?: $process->getOutput();
+            
+            // If no error message, provide a more descriptive one
+            if (empty(trim($errorMessage))) {
+                $errorMessage = "Email sending failed with exit code {$process->getExitCode()}. No error details available.";
+            }
+            
+            Log::error('Email sending failed', [
+                'account_id' => $account->id,
+                'account_email' => $account->email,
+                'provider' => $account->provider,
+                'to' => $validated['to'],
+                'subject' => $validated['subject'],
+                'exit_code' => $process->getExitCode(),
+                'output' => $process->getOutput(),
+                'error_output' => $process->getErrorOutput(),
+                'error_message' => $errorMessage
+            ]);
+            
             return response()->json([
                 'ok' => false,
-                'error' => $process->getErrorOutput() ?: $process->getOutput(),
+                'error' => $errorMessage,
             ], 422);
         }
 
@@ -313,6 +348,7 @@ class EmailController extends Controller
                 // Process and store emails, preventing duplicates
                 $newEmailsCount = 0;
                 $duplicateEmailsCount = 0;
+                $folderService = new EmailFolderService();
 
                 foreach ($syncedEmails as $emailData) {
                     // Check if email already exists using message_id
@@ -363,6 +399,26 @@ class EmailController extends Controller
                             'is_important' => false,
                             'is_read' => false,
                         ]);
+
+                        // Save email content to local storage
+                        if (!empty($emailData['message_id']) && !empty($emailData['folder'])) {
+                            $emailContent = $this->buildEmailContent($emailData);
+                            $saved = $folderService->saveEmailToFile(
+                                $account, 
+                                $emailData['folder'], 
+                                $emailData['message_id'], 
+                                $emailContent
+                            );
+                            
+                            if ($saved) {
+                                Log::info('Email saved to local storage', [
+                                    'account_id' => $accountId,
+                                    'email_id' => $email->id,
+                                    'message_id' => $emailData['message_id'],
+                                    'folder' => $emailData['folder']
+                                ]);
+                            }
+                        }
 
                         // Persist attachments if provided by the sync
                         if (!empty($emailData['attachments']) && is_array($emailData['attachments'])) {
@@ -700,6 +756,95 @@ class EmailController extends Controller
                 'mail_data' => $request->all(),
             ]);
         }
+    }
+
+    /**
+     * Build email content in RFC 2822 format for local storage
+     */
+    private function buildEmailContent(array $emailData): string
+    {
+        $headers = [];
+        
+        // Basic headers
+        if (!empty($emailData['message_id'])) {
+            $headers[] = 'Message-ID: ' . $emailData['message_id'];
+        }
+        
+        if (!empty($emailData['from'])) {
+            $fromName = !empty($emailData['from_name']) ? $emailData['from_name'] : '';
+            $fromEmail = $emailData['from'];
+            if ($fromName) {
+                $headers[] = 'From: ' . $fromName . ' <' . $fromEmail . '>';
+            } else {
+                $headers[] = 'From: ' . $fromEmail;
+            }
+        }
+        
+        if (!empty($emailData['to'])) {
+            $headers[] = 'To: ' . $emailData['to'];
+        }
+        
+        if (!empty($emailData['cc'])) {
+            $headers[] = 'Cc: ' . $emailData['cc'];
+        }
+        
+        if (!empty($emailData['reply_to'])) {
+            $headers[] = 'Reply-To: ' . $emailData['reply_to'];
+        }
+        
+        if (!empty($emailData['subject'])) {
+            $headers[] = 'Subject: ' . $emailData['subject'];
+        }
+        
+        if (!empty($emailData['date'])) {
+            $headers[] = 'Date: ' . $emailData['date'];
+        } elseif (!empty($emailData['parsed_date'])) {
+            $headers[] = 'Date: ' . $emailData['parsed_date'];
+        }
+        
+        // Add custom headers if available
+        if (!empty($emailData['headers']) && is_array($emailData['headers'])) {
+            foreach ($emailData['headers'] as $key => $value) {
+                if (!in_array(strtolower($key), ['message-id', 'from', 'to', 'cc', 'reply-to', 'subject', 'date'])) {
+                    $headers[] = $key . ': ' . $value;
+                }
+            }
+        }
+        
+        // Content-Type header
+        $hasHtml = !empty($emailData['html_body']);
+        $hasText = !empty($emailData['text_body']) || !empty($emailData['body']);
+        
+        if ($hasHtml && $hasText) {
+            $boundary = 'boundary_' . uniqid();
+            $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundary . '"';
+        } elseif ($hasHtml) {
+            $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        } else {
+            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+        }
+        
+        // Build the email content
+        $content = implode("\r\n", $headers) . "\r\n\r\n";
+        
+        if ($hasHtml && $hasText) {
+            // Multipart email
+            $content .= "--" . $boundary . "\r\n";
+            $content .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+            $content .= ($emailData['text_body'] ?? $emailData['body'] ?? '') . "\r\n\r\n";
+            
+            $content .= "--" . $boundary . "\r\n";
+            $content .= "Content-Type: text/html; charset=UTF-8\r\n\r\n";
+            $content .= ($emailData['html_body'] ?? '') . "\r\n\r\n";
+            
+            $content .= "--" . $boundary . "--\r\n";
+        } elseif ($hasHtml) {
+            $content .= $emailData['html_body'];
+        } else {
+            $content .= ($emailData['text_body'] ?? $emailData['body'] ?? '');
+        }
+        
+        return $content;
     }
 }
 

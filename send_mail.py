@@ -140,6 +140,15 @@ def main() -> None:
     bcc = sys.argv[8] if len(sys.argv) > 8 else ""
     attachments_json = sys.argv[9] if len(sys.argv) > 9 else "[]"
 
+    print(f"Starting email send process...")
+    print(f"Provider: {provider}")
+    print(f"From: {email_user}")
+    print(f"To: {to_addr}")
+    print(f"Subject: {subject}")
+    print(f"CC: {cc}")
+    print(f"BCC: {bcc}")
+    print(f"Attachments JSON: {attachments_json}")
+
     if provider != "zoho":
         print(f"Unsupported provider: {provider}")
         sys.exit(3)
@@ -161,8 +170,12 @@ def main() -> None:
     # Add attachments
     try:
         attachments = json.loads(attachments_json)
-        for attachment in attachments:
+        print(f"Processing {len(attachments)} attachments...")
+        for i, attachment in enumerate(attachments):
+            print(f"Processing attachment {i+1}: {attachment.get('filename', 'unknown')}")
             if os.path.exists(attachment["path"]):
+                file_size = os.path.getsize(attachment["path"])
+                print(f"  File size: {file_size} bytes")
                 with open(attachment["path"], "rb") as f:
                     part = MIMEBase("application", "octet-stream")
                     part.set_payload(f.read())
@@ -172,8 +185,12 @@ def main() -> None:
                         f'attachment; filename= "{attachment["filename"]}"'
                     )
                     msg.attach(part)
+                print(f"  Successfully attached: {attachment['filename']}")
+            else:
+                print(f"  Warning: File not found: {attachment['path']}")
     except (json.JSONDecodeError, KeyError, OSError) as e:
         print(f"Warning: Could not process attachments: {e}")
+        print(f"Attachment JSON: {attachments_json}")
         # Continue without attachments
 
     last_error: Exception | None = None
@@ -212,11 +229,23 @@ def main() -> None:
         print(f"SSL/TLS connection failed: {last_error}")
         print("This might be due to SSL certificate issues or network restrictions.")
         print("Try: 1) Check system date/time, 2) Update certificates, 3) Try VPN")
+    elif isinstance(last_error, smtplib.SMTPAuthenticationError):
+        print(f"SMTP Authentication failed: {last_error}")
+        print("Please check your email credentials (username/password or app password).")
+        print("For Zoho, you may need to use an App Password instead of your regular password.")
+    elif isinstance(last_error, smtplib.SMTPRecipientsRefused):
+        print(f"SMTP Recipients refused: {last_error}")
+        print("The recipient email address may be invalid or the server rejected it.")
+    elif isinstance(last_error, smtplib.SMTPDataError):
+        print(f"SMTP Data error: {last_error}")
+        print("The email content or attachments may be too large or contain invalid data.")
     elif last_error is not None:
         print(f"Failed to send email: {last_error}")
         print(f"Error type: {type(last_error).__name__}")
+        print(f"Error details: {str(last_error)}")
     else:
-        print("Failed to send email: Unknown error")
+        print("Failed to send email: Unknown error - all SMTP endpoints failed without specific error details")
+        print("This could be due to network connectivity issues, firewall restrictions, or server problems.")
     sys.exit(5)
 
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreEmailAccountRequest;
 use App\Http\Requests\UpdateEmailAccountRequest;
 use App\Models\EmailAccount;
+use App\Services\EmailFolderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -47,11 +48,25 @@ class EmailAccountController extends Controller
                 'refresh_token' => $request->refresh_token,
             ]);
 
+            // Create local folder structure for the email account
+            $folderService = new EmailFolderService();
+            $folderCreated = $folderService->createAccountFolders($account);
+
+            if (!$folderCreated) {
+                Log::warning('Failed to create local folders for email account', [
+                    'user_id' => Auth::id(),
+                    'account_id' => $account->id,
+                    'email' => $account->email,
+                    'provider' => $account->provider
+                ]);
+            }
+
             Log::info('Email account created', [
                 'user_id' => Auth::id(),
                 'account_id' => $account->id,
                 'email' => $account->email,
-                'provider' => $account->provider
+                'provider' => $account->provider,
+                'folders_created' => $folderCreated
             ]);
 
             return redirect()->route('accounts.index')
@@ -136,11 +151,25 @@ class EmailAccountController extends Controller
 
         try {
             $email = $account->email;
+            
+            // Delete local folder structure for the email account
+            $folderService = new EmailFolderService();
+            $foldersDeleted = $folderService->deleteAccountFolders($account);
+
+            if (!$foldersDeleted) {
+                Log::warning('Failed to delete local folders for email account', [
+                    'user_id' => Auth::id(),
+                    'account_id' => $account->id,
+                    'email' => $email
+                ]);
+            }
+
             $account->delete();
 
             Log::info('Email account deleted', [
                 'user_id' => Auth::id(),
-                'email' => $email
+                'email' => $email,
+                'folders_deleted' => $foldersDeleted
             ]);
 
             return redirect()->route('accounts.index')

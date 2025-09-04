@@ -119,6 +119,24 @@ class EmailAccount extends Model
         
         return $this->last_connection_error;
     }
+
+    /**
+     * Get storage statistics for this email account
+     */
+    public function getStorageStats(): array
+    {
+        $folderService = new \App\Services\EmailFolderService();
+        return $folderService->getAccountStorageStats($this);
+    }
+
+    /**
+     * Get local folder path for this account
+     */
+    public function getLocalFolderPath(): string
+    {
+        $folderService = new \App\Services\EmailFolderService();
+        return $folderService->getAccountPath($this);
+    }
 }
 
 
