@@ -13,6 +13,11 @@ class EmailFolderService
      * Base storage path for email accounts
      */
     private const BASE_STORAGE_PATH = 'email-accounts';
+    
+    /**
+     * Storage disk to use for email storage
+     */
+    private const STORAGE_DISK = 's3-emails';
 
     /**
      * Default folders to create for each email account
@@ -35,8 +40,8 @@ class EmailFolderService
             $accountPath = $this->getAccountPath($account);
             
             // Create main account folder
-            if (!Storage::exists($accountPath)) {
-                Storage::makeDirectory($accountPath);
+            if (!Storage::disk(self::STORAGE_DISK)->exists($accountPath)) {
+                Storage::disk(self::STORAGE_DISK)->makeDirectory($accountPath);
                 Log::info("Created main folder for account: {$account->email}", [
                     'account_id' => $account->id,
                     'path' => $accountPath
@@ -46,8 +51,8 @@ class EmailFolderService
             // Create default subfolders
             foreach (self::DEFAULT_FOLDERS as $folder) {
                 $folderPath = $accountPath . '/' . $folder;
-                if (!Storage::exists($folderPath)) {
-                    Storage::makeDirectory($folderPath);
+                if (!Storage::disk(self::STORAGE_DISK)->exists($folderPath)) {
+                    Storage::disk(self::STORAGE_DISK)->makeDirectory($folderPath);
                     Log::info("Created folder: {$folder} for account: {$account->email}", [
                         'account_id' => $account->id,
                         'folder' => $folder,
@@ -91,8 +96,8 @@ class EmailFolderService
 
         foreach ($providerFolders as $folder) {
             $folderPath = $accountPath . '/' . $folder;
-            if (!Storage::exists($folderPath)) {
-                Storage::makeDirectory($folderPath);
+            if (!Storage::disk(self::STORAGE_DISK)->exists($folderPath)) {
+                Storage::disk(self::STORAGE_DISK)->makeDirectory($folderPath);
                 Log::info("Created provider-specific folder: {$folder} for account: {$account->email}", [
                     'account_id' => $account->id,
                     'provider' => $account->provider,
@@ -142,14 +147,14 @@ class EmailFolderService
             
             // Ensure the folder exists
             $folderPath = $this->getFolderPath($account, $folder);
-            if (!Storage::exists($folderPath)) {
-                Storage::makeDirectory($folderPath);
+            if (!Storage::disk(self::STORAGE_DISK)->exists($folderPath)) {
+                Storage::disk(self::STORAGE_DISK)->makeDirectory($folderPath);
             }
 
             // Save the email content
-            Storage::put($filePath, $emailContent);
+            Storage::disk(self::STORAGE_DISK)->put($filePath, $emailContent);
             
-            Log::info("Saved email to local file", [
+            Log::info("Saved email to S3 storage", [
                 'account_id' => $account->id,
                 'account_email' => $account->email,
                 'folder' => $folder,
@@ -159,7 +164,7 @@ class EmailFolderService
 
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to save email to local file", [
+            Log::error("Failed to save email to S3 storage", [
                 'account_id' => $account->id,
                 'account_email' => $account->email,
                 'folder' => $folder,
@@ -178,13 +183,13 @@ class EmailFolderService
         try {
             $filePath = $this->getEmailFilePath($account, $folder, $messageId);
             
-            if (Storage::exists($filePath)) {
-                return Storage::get($filePath);
+            if (Storage::disk(self::STORAGE_DISK)->exists($filePath)) {
+                return Storage::disk(self::STORAGE_DISK)->get($filePath);
             }
             
             return null;
         } catch (\Exception $e) {
-            Log::error("Failed to read email from local file", [
+            Log::error("Failed to read email from S3 storage", [
                 'account_id' => $account->id,
                 'account_email' => $account->email,
                 'folder' => $folder,
@@ -201,7 +206,7 @@ class EmailFolderService
     public function emailExistsInLocalStorage(EmailAccount $account, string $folder, string $messageId): bool
     {
         $filePath = $this->getEmailFilePath($account, $folder, $messageId);
-        return Storage::exists($filePath);
+        return Storage::disk(self::STORAGE_DISK)->exists($filePath);
     }
 
     /**
@@ -212,11 +217,11 @@ class EmailFolderService
         try {
             $accountPath = $this->getAccountPath($account);
             
-            if (!Storage::exists($accountPath)) {
+            if (!Storage::disk(self::STORAGE_DISK)->exists($accountPath)) {
                 return [];
             }
 
-            $folders = Storage::directories($accountPath);
+            $folders = Storage::disk(self::STORAGE_DISK)->directories($accountPath);
             return array_map(function($folder) use ($accountPath) {
                 return str_replace($accountPath . '/', '', $folder);
             }, $folders);
@@ -238,11 +243,11 @@ class EmailFolderService
         try {
             $folderPath = $this->getFolderPath($account, $folder);
             
-            if (!Storage::exists($folderPath)) {
+            if (!Storage::disk(self::STORAGE_DISK)->exists($folderPath)) {
                 return 0;
             }
 
-            $files = Storage::files($folderPath);
+            $files = Storage::disk(self::STORAGE_DISK)->files($folderPath);
             return count(array_filter($files, function($file) {
                 return pathinfo($file, PATHINFO_EXTENSION) === 'eml';
             }));
@@ -265,8 +270,8 @@ class EmailFolderService
         try {
             $accountPath = $this->getAccountPath($account);
             
-            if (Storage::exists($accountPath)) {
-                Storage::deleteDirectory($accountPath);
+            if (Storage::disk(self::STORAGE_DISK)->exists($accountPath)) {
+                Storage::disk(self::STORAGE_DISK)->deleteDirectory($accountPath);
                 Log::info("Deleted all folders for account: {$account->email}", [
                     'account_id' => $account->id,
                     'path' => $accountPath
@@ -328,7 +333,7 @@ class EmailFolderService
                 'folders' => []
             ];
 
-            if (!Storage::exists($accountPath)) {
+            if (!Storage::disk(self::STORAGE_DISK)->exists($accountPath)) {
                 return $stats;
             }
 
@@ -336,14 +341,14 @@ class EmailFolderService
             
             foreach ($folders as $folder) {
                 $folderPath = $this->getFolderPath($account, $folder);
-                $files = Storage::files($folderPath);
+                $files = Storage::disk(self::STORAGE_DISK)->files($folderPath);
                 $emailFiles = array_filter($files, function($file) {
                     return pathinfo($file, PATHINFO_EXTENSION) === 'eml';
                 });
 
                 $folderSize = 0;
                 foreach ($emailFiles as $file) {
-                    $folderSize += Storage::size($file);
+                    $folderSize += Storage::disk(self::STORAGE_DISK)->size($file);
                 }
 
                 $stats['folders'][$folder] = [

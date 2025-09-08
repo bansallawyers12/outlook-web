@@ -6,6 +6,9 @@
     </x-slot>
 
     <style>
+        /* Hide elements with x-cloak until Alpine.js loads */
+        [x-cloak] { display: none; }
+        
         /* Email content styling */
         .email-content {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -247,6 +250,31 @@
 
                         <!-- Right Side - Action Buttons -->
                         <div class="flex gap-2 flex-shrink-0 flex-wrap">
+                            <!-- Quick Date Range Selector -->
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs font-medium text-gray-700">Sync Date:</label>
+                                <select x-model="syncDateRange" @change="setSyncDateRange" 
+                                        class="rounded-lg border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">All Time</option>
+                                    <option value="today">Today</option>
+                                    <option value="week">This Week</option>
+                                    <option value="month">This Month</option>
+                                    <option value="custom">Custom Range</option>
+                                </select>
+                                <!-- Date Range Indicator -->
+                                <div x-show="startDate || endDate" class="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span x-text="startDate && endDate ? `${startDate} to ${endDate}` : (startDate ? `From ${startDate}` : `Until ${endDate}`)"></span>
+                                    <button @click="clearDateRange" class="ml-1 text-blue-400 hover:text-blue-600">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            
                             <button type="button" @click="toggleAdvancedFilters" 
                                     class="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -263,8 +291,7 @@
                             </button>
                             <button type="button" @click="syncAllFolders" 
                                     class="inline-flex items-center px-3 py-2 border border-indigo-600 text-indigo-700 bg-white rounded-lg text-sm font-medium hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                 </svg>
                                 Sync All
                             </button>
@@ -419,10 +446,11 @@
                         </button>
                     </div>
                 </div>
-                <div class="flex flex-col md:flex-row h-[70vh]">
-                    <div class="md:w-1/3 w-full border-r border-gray-200 overflow-y-auto">
+                <div class="flex flex-col lg:flex-row h-[70vh]">
+                    <!-- Email List Panel -->
+                    <div class="lg:w-1/3 w-full border-r border-gray-200 overflow-y-auto bg-white">
                         <!-- Loading Indicator -->
-                        <div x-show="isLoading" class="p-4 text-center">
+                        <div x-show="isLoading" class="p-6 text-center">
                             <div class="inline-flex items-center px-4 py-2 text-sm text-gray-600">
                                 <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -436,112 +464,145 @@
                             <template x-for="group in groupedEmails" :key="group.date">
                                 <div>
                                     <!-- Date Header -->
-                                    <div class="px-4 py-2 bg-gray-50 border-b border-gray-200">
-                                        <h3 class="text-sm font-medium text-gray-700" x-text="group.dateLabel"></h3>
+                                    <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                                        <h3 class="text-sm font-semibold text-gray-800" x-text="group.dateLabel"></h3>
                                     </div>
                                     
                                     <!-- Emails for this date -->
                                     <div class="divide-y divide-gray-100">
                                         <template x-for="email in group.emails" :key="email.id">
-                                            <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
+                                            <div class="flex items-start gap-3 px-4 py-4 hover:bg-gray-50 transition-colors cursor-pointer group"
                                                  :class="{ 'bg-blue-50 border-l-4 border-blue-500': selectedEmail && selectedEmail.id === email.id }">
+                                                <!-- Checkbox -->
                                                 <input type="checkbox" 
                                                        :value="email.id" 
                                                        x-model="selectedEmails"
-                                                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                                            <button type="button"
-                                                        class="flex-1 text-left"
-                                                    @click="selectedEmail = email">
-                                                <div class="flex items-start justify-between gap-2">
-                                                    <div class="flex-1 min-w-0">
-                                                        <div class="flex items-center gap-2">
-                                                            <p class="text-sm font-semibold truncate" 
-                                                               :class="email.is_read ? 'text-gray-600' : 'text-gray-900 font-bold'" 
-                                                               x-text="email.from"></p>
-                                                            <div class="flex items-center gap-1">
-                                                                <!-- Attachment icon -->
-                                                                <svg x-show="email.hasAttachment" class="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                                <!-- Flag icon -->
-                                                                <svg x-show="email.is_flagged" class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clip-rule="evenodd"></path>
-                                                                </svg>
+                                                       @click.stop
+                                                       class="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                                
+                                                <!-- Email Content -->
+                                                <button type="button"
+                                                        class="flex-1 text-left min-w-0"
+                                                        @click="selectEmail(email)">
+                                                    <div class="flex items-start justify-between gap-3">
+                                                        <div class="flex-1 min-w-0">
+                                                            <!-- Sender and Icons -->
+                                                            <div class="flex items-center gap-2 mb-1">
+                                                                <p class="text-sm font-semibold truncate" 
+                                                                   :class="email.is_read ? 'text-gray-600' : 'text-gray-900 font-bold'" 
+                                                                   x-text="email.from"></p>
+                                                                <div class="flex items-center gap-1 flex-shrink-0">
+                                                                    <!-- Attachment icon -->
+                                                                    <svg x-show="email.hasAttachment" class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fill-rule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                    <!-- Flag icon -->
+                                                                    <svg x-show="email.is_flagged" class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <!-- Subject -->
+                                                            <p class="text-sm truncate mb-1" 
+                                                               :class="email.is_read ? 'text-gray-600' : 'text-gray-900 font-semibold'" 
+                                                               x-text="email.subject || '(No Subject)'"></p>
+                                                            
+                                                            <!-- Snippet -->
+                                                            <p class="text-xs text-gray-500 line-clamp-2 leading-relaxed" x-text="email.snippet"></p>
+                                                        </div>
+                                                        
+                                                        <!-- Time and Actions -->
+                                                        <div class="flex flex-col items-end gap-2 flex-shrink-0">
+                                                            <span class="text-xs text-gray-500" x-text="email.time"></span>
+                                                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <!-- Trash icon -->
+                                                                <button @click.stop="deleteEmail(email)" 
+                                                                        class="p-1.5 hover:bg-red-100 rounded-full transition-colors"
+                                                                        title="Delete email">
+                                                                    <svg class="w-4 h-4 text-gray-400 hover:text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                </button>
                                                             </div>
                                                         </div>
-                                                        <p class="mt-0.5 text-sm truncate" 
-                                                           :class="email.is_read ? 'text-gray-600' : 'text-gray-900 font-semibold'" 
-                                                           x-text="email.subject"></p>
-                                                        <p class="mt-1 text-xs text-gray-500 line-clamp-2" x-text="email.snippet"></p>
                                                     </div>
-                                                    <div class="flex flex-col items-end gap-1">
-                                                        <span class="shrink-0 text-xs text-gray-500" x-text="email.time"></span>
-                                                        <div class="flex items-center gap-1">
-                                                            <!-- Trash icon -->
-                                                            <button @click.stop="deleteEmail(email)" class="p-1 hover:bg-gray-200 rounded">
-                                                                <svg class="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </button>
+                                                </button>
                                             </div>
                                         </template>
                                     </div>
                                 </div>
                             </template>
-                            <div x-show="emails.length === 0 && selectedAccountId" class="p-4 text-sm text-gray-500">No emails to display.</div>
-                            <div x-show="!selectedAccountId" class="p-4 text-sm text-gray-500">Please select an email account to view emails.</div>
-                        </div>
+                            
+                            <!-- Empty States -->
+                            <div x-show="emails.length === 0 && selectedAccountId" class="p-8 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                                </svg>
+                                <p class="text-sm text-gray-500">No emails to display.</p>
+                            </div>
+                            <div x-show="!selectedAccountId" class="p-8 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                                </svg>
+                                <p class="text-sm text-gray-500">Please select an email account to view emails.</p>
+                            </div>
                         </div>
                     </div>
-                    <div class="md:w-2/3 w-full h-full overflow-y-auto bg-white">
+                    <!-- Email Content Panel -->
+                    <div class="lg:w-2/3 w-full h-full overflow-y-auto bg-white">
                         <template x-if="selectedEmail">
                             <div class="h-full flex flex-col">
                                 <!-- Email Header -->
-                                <div class="border-b border-gray-200 p-6 bg-white">
+                                <div class="border-b border-gray-200 p-6 bg-white shadow-sm">
                                     <div class="flex items-start justify-between">
-                                        <div class="flex-1">
-                                            <h1 class="text-xl font-semibold text-gray-900 mb-2" x-text="selectedEmail.subject || 'No Subject'"></h1>
-                                            <div class="flex items-center gap-4 text-sm text-gray-600">
-                                                <div class="flex items-center gap-2">
-                                                    <span class="font-medium">From:</span>
-                                                    <span x-text="selectedEmail.from"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <h1 class="text-2xl font-bold text-gray-900 mb-4 break-words" x-text="selectedEmail.subject || 'No Subject'"></h1>
+                                            
+                                            <!-- Email Metadata -->
+                                            <div class="space-y-2 text-sm">
+                                                <div class="flex items-center gap-3">
+                                                    <span class="font-semibold text-gray-700 w-12">From:</span>
+                                                    <span class="text-gray-900" x-text="selectedEmail.from"></span>
                                                 </div>
-                                                <div class="flex items-center gap-2">
-                                                    <span class="font-medium">Date:</span>
-                                                    <span x-text="selectedEmail.time"></span>
+                                                
+                                                <div x-show="selectedEmail.to" class="flex items-center gap-3">
+                                                    <span class="font-semibold text-gray-700 w-12">To:</span>
+                                                    <span class="text-gray-900" x-text="selectedEmail.to"></span>
                                                 </div>
-                                            </div>
-                                            <div x-show="selectedEmail.to" class="mt-2 text-sm text-gray-600">
-                                                <span class="font-medium">To:</span>
-                                                <span x-text="selectedEmail.to"></span>
-                                            </div>
-                                            <div x-show="selectedEmail.cc" class="mt-1 text-sm text-gray-600">
-                                                <span class="font-medium">Cc:</span>
-                                                <span x-text="selectedEmail.cc"></span>
-                                            </div>
-                                            <div x-show="selectedEmail.reply_to" class="mt-1 text-sm text-gray-600">
-                                                <span class="font-medium">Reply-To:</span>
-                                                <span x-text="selectedEmail.reply_to"></span>
+                                                
+                                                <div x-show="selectedEmail.cc" class="flex items-center gap-3">
+                                                    <span class="font-semibold text-gray-700 w-12">Cc:</span>
+                                                    <span class="text-gray-900" x-text="selectedEmail.cc"></span>
+                                                </div>
+                                                
+                                                <div x-show="selectedEmail.reply_to" class="flex items-center gap-3">
+                                                    <span class="font-semibold text-gray-700 w-12">Reply-To:</span>
+                                                    <span class="text-gray-900" x-text="selectedEmail.reply_to"></span>
+                                                </div>
+                                                
+                                                <div class="flex items-center gap-3">
+                                                    <span class="font-semibold text-gray-700 w-12">Date:</span>
+                                                    <span class="text-gray-900" x-text="selectedEmail.time"></span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div class="flex gap-2 ml-4">
-                                            <button class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500" @click="reply(selectedEmail)">
+                                        
+                                        <!-- Action Buttons -->
+                                        <div class="flex gap-2 ml-6 flex-shrink-0">
+                                            <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors" @click="reply(selectedEmail)">
                                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                                                 </svg>
                                                 Reply
                                             </button>
-                                            <button class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500" @click="forward(selectedEmail)">
+                                            <button class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors" @click="forward(selectedEmail)">
                                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                                                 </svg>
                                                 Forward
                                             </button>
-                                            <button class="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500" @click="deleteEmail(selectedEmail)">
+                                            <button class="inline-flex items-center px-4 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-lg text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors" @click="deleteEmail(selectedEmail)">
                                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                                 </svg>
@@ -552,34 +613,53 @@
                                 </div>
                                 
                                 <!-- Email Content -->
-                                <div class="flex-1 overflow-y-auto">
-                                    <div class="p-6">
+                                <div class="flex-1 overflow-y-auto bg-gray-50">
+                                    <div class="p-8">
                                         <!-- Show loading state if email body is being processed -->
-                                        <div x-show="!selectedEmail.body && !selectedEmail.htmlBody" class="flex items-center justify-center h-32">
-                                            <div class="text-gray-500">Loading email content...</div>
+                                        <div x-show="(!selectedEmail.body && !selectedEmail.htmlBody) || selectedEmail.isLoadingContent" class="flex items-center justify-center h-32">
+                                            <div class="flex items-center text-gray-500">
+                                                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24">
+                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                <span x-text="selectedEmail.isLoadingContent ? 'Loading from EML file...' : 'Loading email content...'"></span>
+                                            </div>
                                         </div>
                                         
                                         <!-- HTML Email Content -->
                                         <div x-show="selectedEmail.htmlBody" 
-                                             class="email-content prose prose-sm max-w-none"
+                                             class="email-content prose prose-lg max-w-none bg-white rounded-lg shadow-sm p-6 border border-gray-200"
                                              x-html="selectedEmail.htmlBody">
                                         </div>
                                         
                                         <!-- Plain Text Email Content -->
                                         <div x-show="selectedEmail.body && !selectedEmail.htmlBody" 
-                                             class="email-content prose prose-sm max-w-none">
-                                            <div class="whitespace-pre-wrap font-mono text-sm" x-text="selectedEmail.body"></div>
+                                             class="email-content prose prose-lg max-w-none bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+                                            <div class="whitespace-pre-wrap text-gray-900 leading-relaxed" x-text="selectedEmail.body"></div>
                                         </div>
                                         
+                                        <!-- Content source indicator -->
+                                        <div x-show="selectedEmail.contentSource" class="mt-4 flex items-center text-xs text-gray-500">
+                                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <span x-text="selectedEmail.contentSource === 'eml' ? 'Content loaded from EML file (S3)' : 'Content loaded from database'"></span>
+                                        </div>
+
                                         <!-- Raw headers toggle -->
-                                        <details x-show="selectedEmail.headers" class="mt-4">
-                                            <summary class="cursor-pointer text-sm text-gray-600 hover:text-gray-800">Show original headers</summary>
-                                            <pre class="mt-2 text-xs bg-gray-50 p-3 rounded overflow-x-auto" x-text="JSON.stringify(selectedEmail.headers, null, 2)"></pre>
+                                        <details x-show="selectedEmail.headers" class="mt-6">
+                                            <summary class="cursor-pointer text-sm text-gray-600 hover:text-gray-800 font-medium bg-gray-100 px-3 py-2 rounded-lg">
+                                                Show original headers
+                                            </summary>
+                                            <pre class="mt-3 text-xs bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto font-mono" x-text="JSON.stringify(selectedEmail.headers, null, 2)"></pre>
                                         </details>
 
                                         <!-- No content message -->
-                                        <div x-show="!selectedEmail.body && !selectedEmail.htmlBody" class="text-gray-500 text-center py-8">
-                                            No content available for this email.
+                                        <div x-show="!selectedEmail.body && !selectedEmail.htmlBody" class="text-center py-12">
+                                            <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                            <p class="text-gray-500">No content available for this email.</p>
                                         </div>
                                         
                                         <!-- Attachments Section -->
@@ -664,13 +744,23 @@
                                 </div>
                             </div>
                         </template>
-                        <div x-show="!selectedEmail" class="h-full grid place-items-center text-gray-500">
-                            <div class="text-center">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                        <!-- Empty State -->
+                        <div x-show="!selectedEmail" class="h-full flex items-center justify-center bg-gray-50">
+                            <div class="text-center max-w-md mx-auto px-6">
+                                <svg class="mx-auto h-16 w-16 text-gray-300 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
                                 </svg>
-                                <h3 class="mt-2 text-sm font-medium text-gray-900">No email selected</h3>
-                                <p class="mt-1 text-sm text-gray-500">Choose an email from the list to view its contents.</p>
+                                <h3 class="text-lg font-semibold text-gray-900 mb-2">No email selected</h3>
+                                <p class="text-gray-500 leading-relaxed">Choose an email from the list to view its contents, or compose a new email to get started.</p>
+                                <div class="mt-6">
+                                    <button @click="openCompose()" 
+                                            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                        </svg>
+                                        Compose Email
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -709,7 +799,7 @@
         </div>
         
         <!-- Compose Modal (moved inside x-data scope) -->
-        <div x-show="showCompose" class="fixed inset-0 z-50 flex items-center justify-center" style="display:none">
+        <div x-show="showCompose" x-cloak class="fixed inset-0 z-50 flex items-center justify-center">
             <div class="absolute inset-0 bg-black bg-opacity-30" @click="showCompose = false"></div>
             <div class="relative bg-white w-full max-w-3xl mx-4 rounded-lg shadow-lg">
                 <div class="border-b px-4 py-3 flex items-center justify-between">
@@ -747,7 +837,19 @@
                         <input type="text" x-model="compose.subject" class="mt-1 block w-full rounded-md border-gray-300 text-sm" />
                     </div>
                     <div>
-                        <label class="block text-sm text-gray-700">Body</label>
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="block text-sm text-gray-700">Body</label>
+                            <div class="flex items-center space-x-2">
+                                <label class="text-sm text-gray-600">Signature:</label>
+                                <select x-model="compose.signatureId" @change="applySignature()" class="text-sm rounded-md border-gray-300">
+                                    <option value="">No signature</option>
+                                    <template x-for="signature in signatures" :key="signature.id">
+                                        <option :value="signature.id" x-text="signature.name"></option>
+                                    </template>
+                                </select>
+                                <a href="/signatures" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm">Manage</a>
+                            </div>
+                        </div>
                         <textarea rows="10" x-model="compose.body" class="mt-1 block w-full rounded-md border-gray-300 text-sm"></textarea>
                     </div>
                     <div>
@@ -789,11 +891,13 @@
             return {
                 accounts: @json($emailAccounts),
                 selectedAccountId: null,
+                signatures: [],
                 folders: ['Inbox', 'Sent', 'Drafts', 'Trash', 'Spam'],
                 selectedFolder: 'Inbox',
                 searchQuery: '',
                 startDate: '',
                 endDate: '',
+                syncDateRange: '',
                 emails: [],
                 selectedEmail: null,
                 showAdvancedFilters: false,
@@ -900,6 +1004,20 @@
                         return;
                     }
                     
+                    // Show sync confirmation with date range
+                    let confirmMessage = `Sync emails from ${this.selectedFolder} folder?`;
+                    if (this.startDate && this.endDate) {
+                        confirmMessage = `Sync emails from ${this.selectedFolder} folder between ${this.startDate} and ${this.endDate}?`;
+                    } else if (this.startDate) {
+                        confirmMessage = `Sync emails from ${this.selectedFolder} folder from ${this.startDate} onwards?`;
+                    } else if (this.endDate) {
+                        confirmMessage = `Sync emails from ${this.selectedFolder} folder until ${this.endDate}?`;
+                    }
+                    
+                    if (!confirm(confirmMessage)) {
+                        return;
+                    }
+                    
                     // Show loading state
                     const syncButton = document.querySelector('button[\\@click="syncEmails"]');
                     const originalText = syncButton.textContent;
@@ -952,6 +1070,21 @@
                         alert('Start date cannot be after end date.');
                         return;
                     }
+                    
+                    // Show sync confirmation with date range
+                    let confirmMessage = 'Sync emails from all folders?';
+                    if (this.startDate && this.endDate) {
+                        confirmMessage = `Sync emails from all folders between ${this.startDate} and ${this.endDate}?`;
+                    } else if (this.startDate) {
+                        confirmMessage = `Sync emails from all folders from ${this.startDate} onwards?`;
+                    } else if (this.endDate) {
+                        confirmMessage = `Sync emails from all folders until ${this.endDate}?`;
+                    }
+                    
+                    if (!confirm(confirmMessage)) {
+                        return;
+                    }
+                    
                     const btn = event.currentTarget;
                     const original = btn.textContent;
                     btn.textContent = 'Syncing All...';
@@ -996,7 +1129,55 @@
                     this.compose.subject = prefill.subject || '';
                     this.compose.body = prefill.body || '';
                     this.compose.attachments = [];
+                    this.compose.signatureId = '';
                     this.showCompose = true;
+                    // Load signatures after showing the modal
+                    this.loadSignatures();
+                },
+                loadSignatures() {
+                    if (!this.selectedAccountId) {
+                        this.signatures = [];
+                        return;
+                    }
+                    
+                    fetch(`/signatures/account/${this.selectedAccountId}`)
+                        .then(r => r.json())
+                        .then(res => {
+                            if (res.success) {
+                                this.signatures = res.signatures || [];
+                                // Set default signature if available
+                                const defaultSignature = res.signatures.find(s => s.is_default);
+                                if (defaultSignature) {
+                                    this.compose.signatureId = defaultSignature.id;
+                                    this.applySignature();
+                                }
+                            } else {
+                                this.signatures = [];
+                            }
+                        })
+                        .catch(err => {
+                            console.error('Failed to load signatures:', err);
+                            this.signatures = [];
+                        });
+                },
+                applySignature() {
+                    if (!this.compose.signatureId) {
+                        // Remove signature if none selected
+                        this.compose.body = this.compose.body.replace(/\n\n--\s*\n.*$/s, '').replace(/\n\nKind regards.*$/s, '').replace(/\n\nBest regards.*$/s, '').replace(/\n\nSincerely.*$/s, '');
+                        return;
+                    }
+                    
+                    const signature = this.signatures.find(s => s.id == this.compose.signatureId);
+                    if (!signature) return;
+                    
+                    // Remove any existing signature
+                    this.compose.body = this.compose.body.replace(/\n\n--\s*\n.*$/s, '').replace(/\n\nKind regards.*$/s, '').replace(/\n\nBest regards.*$/s, '').replace(/\n\nSincerely.*$/s, '');
+                    
+                    // Add the new signature
+                    const signatureContent = signature.content || '';
+                    if (signatureContent) {
+                        this.compose.body = this.compose.body + (this.compose.body ? '\n\n' : '') + signatureContent;
+                    }
                 },
                 handleFileSelection(event) {
                     const files = Array.from(event.target.files);
@@ -1043,7 +1224,7 @@
                 showCompose: false,
                 showAttachmentPreview: false,
                 previewAttachment: null,
-                compose: { to: '', cc: '', bcc: '', subject: '', body: '', attachments: [] },
+                compose: { to: '', cc: '', bcc: '', subject: '', body: '', attachments: [], signatureId: '' },
                 deleteEmail(email) {
                     // TODO: Call delete endpoint then remove from list
                 },
@@ -1215,6 +1396,44 @@
                     this.showAdvancedFilters = !this.showAdvancedFilters;
                 },
                 
+                setSyncDateRange() {
+                    const today = new Date();
+                    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    
+                    switch(this.syncDateRange) {
+                        case 'today':
+                            this.startDate = startOfDay.toISOString().split('T')[0];
+                            this.endDate = today.toISOString().split('T')[0];
+                            break;
+                        case 'week':
+                            const startOfWeek = new Date(startOfDay);
+                            startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
+                            this.startDate = startOfWeek.toISOString().split('T')[0];
+                            this.endDate = today.toISOString().split('T')[0];
+                            break;
+                        case 'month':
+                            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                            this.startDate = startOfMonth.toISOString().split('T')[0];
+                            this.endDate = today.toISOString().split('T')[0];
+                            break;
+                        case 'custom':
+                            // Show advanced filters for custom date selection
+                            this.showAdvancedFilters = true;
+                            break;
+                        default:
+                            // All time - clear dates
+                            this.startDate = '';
+                            this.endDate = '';
+                            break;
+                    }
+                },
+                
+                clearDateRange() {
+                    this.startDate = '';
+                    this.endDate = '';
+                    this.syncDateRange = '';
+                },
+                
                 applyFilters() {
                     this.addToRecentSearches(this.searchQuery);
                     this.loadEmails();
@@ -1369,6 +1588,42 @@
                 
                 clearSelection() {
                     this.selectedEmails = [];
+                },
+                
+                selectEmail(email) {
+                    this.selectedEmail = email;
+                    this.selectedEmails = [email.id];
+                    this.showCompose = false;
+                    this.showSettings = false;
+                    
+                    // Load EML content if available
+                    this.loadEmailContent(email.id);
+                },
+                
+                loadEmailContent(emailId) {
+                    if (!emailId) return;
+                    
+                    // Show loading state
+                    this.selectedEmail.isLoadingContent = true;
+                    
+                    fetch(`/emails/content/${emailId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success && data.content) {
+                                // Update email content with EML data
+                                this.selectedEmail.text_body = data.content.text_body || this.selectedEmail.text_body;
+                                this.selectedEmail.html_body = data.content.html_body || this.selectedEmail.html_body;
+                                this.selectedEmail.body = data.content.body || this.selectedEmail.body;
+                                this.selectedEmail.headers = data.content.headers || this.selectedEmail.headers;
+                                this.selectedEmail.contentSource = data.source;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading email content:', error);
+                        })
+                        .finally(() => {
+                            this.selectedEmail.isLoadingContent = false;
+                        });
                 },
                 
                 bulkMarkAsRead() {

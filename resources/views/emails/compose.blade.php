@@ -46,7 +46,28 @@
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700">Body</label>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-sm font-medium text-gray-700">Body</label>
+                                <div class="flex items-center space-x-2">
+                                    <label class="text-sm text-gray-600">Signature:</label>
+                                    <select id="signatureSelect" class="text-sm rounded-md border-gray-300">
+                                        <option value="">No signature</option>
+                                        @foreach($signatures as $signature)
+                                            <option value="{{ $signature->id }}" 
+                                                    data-content="{{ $signature->content }}"
+                                                    data-html-content="{{ $signature->html_content }}"
+                                                    {{ $signature->is_default ? 'selected' : '' }}>
+                                                {{ $signature->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <a href="{{ route('signatures.index', ['account_id' => $accountId]) }}" 
+                                       target="_blank"
+                                       class="text-blue-600 hover:text-blue-800 text-sm">
+                                        Manage
+                                    </a>
+                                </div>
+                            </div>
                             <textarea id="body" rows="12" class="mt-1 block w-full rounded-md border-gray-300">{{ $body }}</textarea>
                         </div>
 
@@ -83,6 +104,29 @@
             const files = Array.from(e.target.files);
             selectedFiles = files;
             displaySelectedFiles();
+        });
+
+        // Handle signature selection
+        document.getElementById('signatureSelect').addEventListener('change', function(e) {
+            const selectedOption = e.target.options[e.target.selectedIndex];
+            const bodyTextarea = document.getElementById('body');
+            
+            if (selectedOption.value) {
+                const signatureContent = selectedOption.dataset.content || '';
+                const currentBody = bodyTextarea.value;
+                
+                // Remove any existing signature (look for common signature patterns)
+                const bodyWithoutSignature = currentBody.replace(/\n\n--\s*\n.*$/s, '').replace(/\n\nKind regards.*$/s, '').replace(/\n\nBest regards.*$/s, '').replace(/\n\nSincerely.*$/s, '');
+                
+                // Add the new signature
+                const newBody = bodyWithoutSignature + (bodyWithoutSignature ? '\n\n' : '') + signatureContent;
+                bodyTextarea.value = newBody;
+            } else {
+                // Remove signature if "No signature" is selected
+                const currentBody = bodyTextarea.value;
+                const bodyWithoutSignature = currentBody.replace(/\n\n--\s*\n.*$/s, '').replace(/\n\nKind regards.*$/s, '').replace(/\n\nBest regards.*$/s, '').replace(/\n\nSincerely.*$/s, '');
+                bodyTextarea.value = bodyWithoutSignature;
+            }
         });
 
         function displaySelectedFiles() {

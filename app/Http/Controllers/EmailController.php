@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\EmailAccount;
 use App\Models\Email;
 use App\Models\EmailDraft;
+use App\Models\EmailSignature;
 use App\Services\EmailFolderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -30,7 +31,18 @@ class EmailController extends Controller
                 ->first();
         }
 
-        return view('emails.compose', compact('account', 'accountId', 'to', 'cc', 'bcc', 'subject', 'body'));
+        // Get signatures for the selected account or all accounts
+        $signatures = EmailSignature::forUser($request->user()->id)
+            ->where(function ($query) use ($accountId) {
+                $query->where('account_id', $accountId)
+                      ->orWhereNull('account_id');
+            })
+            ->active()
+            ->orderBy('is_default', 'desc')
+            ->orderBy('name')
+            ->get();
+
+        return view('emails.compose', compact('account', 'accountId', 'to', 'cc', 'bcc', 'subject', 'body', 'signatures'));
     }
 
     public function send(Request $request)
@@ -249,6 +261,12 @@ class EmailController extends Controller
                     if ($endDate) {
                         $args[] = $endDate;
                     }
+                    
+                    // Add AWS credentials for S3 upload
+                    $args[] = env('AWS_ACCESS_KEY_ID');
+                    $args[] = env('AWS_SECRET_ACCESS_KEY');
+                    $args[] = env('AWS_DEFAULT_REGION');
+                    $args[] = env('AWS_BUCKET');
 
                     // Log sync attempt
                     Log::info("Starting email sync via controller", [
@@ -852,6 +870,114 @@ class EmailController extends Controller
                 'error' => $e->getMessage(),
                 'mail_data' => $request->all(),
             ]);
+        }
+    }
+
+    /**
+     * Get email content from EML file stored in S3
+     */
+    public function getEmailContent(int $id)
+    {
+        $email = Email::where('id', $id)
+            ->whereHas('emailAccount', function ($query) {
+                $query->where('user_id', Auth::id());
+            })
+            ->with('emailAccount')
+            ->firstOrFail();
+
+        $folderService = new EmailFolderService();
+        
+        // Try to get content from EML file first
+        $emlContent = $folderService->getEmailFromFile(
+            $email->emailAccount, 
+            $email->folder, 
+            $email->message_id
+        );
+
+        if ($emlContent) {
+            // Parse EML content to extract body
+            $parsedContent = $this->parseEmlContent($emlContent);
+            
+            return response()->json([
+                'success' => true,
+                'content' => $parsedContent,
+                'source' => 'eml'
+            ]);
+        }
+
+        // Fallback to database content
+        return response()->json([
+            'success' => true,
+            'content' => [
+                'text_body' => $email->text_body,
+                'html_body' => $email->html_body,
+                'body' => $email->body,
+                'headers' => $email->headers
+            ],
+            'source' => 'database'
+        ]);
+    }
+
+    /**
+     * Parse EML content to extract body and headers
+     */
+    private function parseEmlContent(string $emlContent): array
+    {
+        // Split headers and body
+        $parts = explode("\r\n\r\n", $emlContent, 2);
+        $headers = $parts[0] ?? '';
+        $body = $parts[1] ?? '';
+
+        // Parse headers
+        $parsedHeaders = [];
+        $headerLines = explode("\r\n", $headers);
+        foreach ($headerLines as $line) {
+            if (strpos($line, ':') !== false) {
+                list($key, $value) = explode(':', $line, 2);
+                $parsedHeaders[trim($key)] = trim($value);
+            }
+        }
+
+        // Check if body is multipart
+        $contentType = $parsedHeaders['Content-Type'] ?? '';
+        $isMultipart = strpos($contentType, 'multipart/') === 0;
+
+        if ($isMultipart) {
+            // Extract boundary
+            preg_match('/boundary="([^"]+)"/', $contentType, $matches);
+            $boundary = $matches[1] ?? '--boundary';
+            
+            // Parse multipart content
+            $multipartParts = explode('--' . $boundary, $body);
+            $textBody = '';
+            $htmlBody = '';
+            
+            foreach ($multipartParts as $part) {
+                if (strpos($part, 'Content-Type: text/plain') !== false) {
+                    $textPart = explode("\r\n\r\n", $part, 2);
+                    $textBody = trim($textPart[1] ?? '');
+                } elseif (strpos($part, 'Content-Type: text/html') !== false) {
+                    $htmlPart = explode("\r\n\r\n", $part, 2);
+                    $htmlBody = trim($htmlPart[1] ?? '');
+                }
+            }
+            
+            return [
+                'text_body' => $textBody,
+                'html_body' => $htmlBody,
+                'body' => $textBody ?: $htmlBody,
+                'headers' => $parsedHeaders
+            ];
+        } else {
+            // Single part content
+            $isHtml = strpos($contentType, 'text/html') !== false;
+            
+            return [
+                'text_body' => $isHtml ? '' : $body,
+                'html_body' => $isHtml ? $body : '',
+                'body' => $body,
+                'headers' => $parsedHeaders
+            ];
         }
     }
 

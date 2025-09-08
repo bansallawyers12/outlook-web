@@ -6,9 +6,28 @@ import socket
 import ssl
 import traceback
 import os
+import boto3
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+
+
+def upload_to_s3(file_path, s3_key, bucket_name, aws_access_key, aws_secret_key, region):
+    """Upload file to S3 bucket"""
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key,
+            region_name=region
+        )
+        
+        s3_client.upload_file(file_path, bucket_name, s3_key)
+        print(f"DEBUG: Uploaded {file_path} to s3://{bucket_name}/{s3_key}", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"DEBUG: Failed to upload to S3: {e}", file=sys.stderr)
+        return False
 
 
 def resolve_hostname_with_fallback(hostname, port=993):
@@ -119,7 +138,9 @@ def test_network_connectivity(hostname, port=993):
 
 
 def fetch_emails(provider: str, email_user: str, access_token: str, folder: str = "inbox", 
-                 start_date: str = None, end_date: str = None, limit: int = 50):
+                 start_date: str = None, end_date: str = None, limit: int = 50,
+                 aws_access_key: str = None, aws_secret_key: str = None, 
+                 aws_region: str = None, aws_bucket: str = None):
     if provider == "zoho":
         imap_host = "imap.zoho.com"
     else:
@@ -209,27 +230,50 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
                         try:
                             payload = part.get_payload(decode=True) or b""
                             safe_msg_id = (msg.get("Message-ID") or "noid").replace('<','').replace('>','').replace(':','_').replace('/','_').replace('\\','_')
-                            base_dir = Path('storage') / 'app' / 'attachments' / safe_msg_id
-                            base_dir.mkdir(parents=True, exist_ok=True)
                             name = filename or f"attachment_{len(attachments)+1}"
                             ext = ''
                             if '.' in name:
                                 ext = name.split('.')[-1].lower()
-                            file_path = base_dir / name
-                            with open(file_path, 'wb') as f:
+                            
+                            # Create temporary local file
+                            temp_dir = Path('storage') / 'app' / 'temp' / 'attachments' / safe_msg_id
+                            temp_dir.mkdir(parents=True, exist_ok=True)
+                            temp_file_path = temp_dir / name
+                            
+                            with open(temp_file_path, 'wb') as f:
                                 f.write(payload)
+                            
+                            file_size = temp_file_path.stat().st_size
+                            s3_path = None
+                            
+                            # Upload to S3 if credentials provided
+                            if aws_access_key and aws_secret_key and aws_region and aws_bucket:
+                                s3_key = f"emails/attachments/{safe_msg_id}/{name}"
+                                if upload_to_s3(str(temp_file_path), s3_key, aws_bucket, 
+                                              aws_access_key, aws_secret_key, aws_region):
+                                    s3_path = s3_key
+                                    # Clean up temp file after successful upload
+                                    temp_file_path.unlink()
+                                else:
+                                    # Keep local file if S3 upload fails
+                                    s3_path = str(temp_file_path)
+                            else:
+                                # Keep local file if no S3 credentials
+                                s3_path = str(temp_file_path)
+                            
                             attachments.append({
                                 "filename": name,
                                 "display_name": name,
                                 "content_type": content_type,
-                                "file_size": file_path.stat().st_size,
-                                "file_path": str(file_path),
+                                "file_size": file_size,
+                                "file_path": s3_path,
                                 "content_id": part.get('Content-ID'),
                                 "is_inline": 'inline' in content_disposition,
                                 "headers": dict(part.items()),
                                 "extension": ext,
                             })
-                        except Exception:
+                        except Exception as e:
+                            print(f"DEBUG: Attachment processing error: {e}", file=sys.stderr)
                             # Skip attachment save errors, continue processing
                             pass
             else:
@@ -325,7 +369,14 @@ if __name__ == "__main__":
     start_date = sys.argv[6] if len(sys.argv) > 6 else None
     end_date = sys.argv[7] if len(sys.argv) > 7 else None
     
-    emails = fetch_emails(provider, email_user, token, folder, start_date, end_date, limit)
+    # AWS credentials (optional)
+    aws_access_key = sys.argv[8] if len(sys.argv) > 8 else None
+    aws_secret_key = sys.argv[9] if len(sys.argv) > 9 else None
+    aws_region = sys.argv[10] if len(sys.argv) > 10 else None
+    aws_bucket = sys.argv[11] if len(sys.argv) > 11 else None
+    
+    emails = fetch_emails(provider, email_user, token, folder, start_date, end_date, limit,
+                         aws_access_key, aws_secret_key, aws_region, aws_bucket)
     print(json.dumps(emails))
 
 

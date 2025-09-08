@@ -6,6 +6,7 @@ use App\Http\Controllers\EmailController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\EmailAccountController;
+use App\Http\Controllers\SignatureController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -41,6 +42,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/emails/draft/{id}', [EmailController::class, 'getDraft'])->name('emails.draft.get');
     Route::delete('/emails/draft/{id}', [EmailController::class, 'deleteDraft'])->name('emails.draft.delete');
     Route::get('/emails/reply/{id}', [EmailController::class, 'getReplyData'])->name('emails.reply.get');
+    Route::get('/emails/content/{id}', [EmailController::class, 'getEmailContent'])->name('emails.content.get');
     Route::get('/emails/compose', [EmailController::class, 'compose'])->name('emails.compose');
     Route::get('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.get');
     Route::post('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.post');
@@ -55,6 +57,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/labels', [LabelController::class, 'index'])->name('labels.index');
     Route::post('/labels/apply', [LabelController::class, 'apply'])->name('labels.apply');
     Route::post('/labels/remove', [LabelController::class, 'remove'])->name('labels.remove');
+
+    // Email signatures management
+    Route::resource('signatures', SignatureController::class);
+    Route::post('/signatures/{signature}/toggle', [SignatureController::class, 'toggle'])->name('signatures.toggle');
+    Route::post('/signatures/{signature}/set-default', [SignatureController::class, 'setDefault'])->name('signatures.set-default');
+    Route::get('/signatures/account/{account_id}', [SignatureController::class, 'getForAccount'])->name('signatures.get-for-account');
+    Route::post('/signatures/{signature}/upload-image', [SignatureController::class, 'uploadImage'])->name('signatures.upload-image');
+    Route::delete('/signatures/{signature}/remove-image', [SignatureController::class, 'removeImage'])->name('signatures.remove-image');
+    Route::get('/signatures/{signature}/preview', [SignatureController::class, 'preview'])->name('signatures.preview');
+    Route::get('/signatures/template/preview', [SignatureController::class, 'getTemplatePreview'])->name('signatures.template-preview');
 });
 
 require __DIR__.'/auth.php';
