@@ -178,6 +178,8 @@
                                 </select>
                             </div>
 
+
+
                             <!-- Search Bar -->
                             <div class="min-w-0 flex-1 sm:max-w-md">
                                 <label for="searchQuery" class="block text-xs font-medium text-gray-700 mb-1">Search</label>
@@ -258,7 +260,6 @@
                                     <option value="">All Time</option>
                                     <option value="today">Today</option>
                                     <option value="week">This Week</option>
-                                    <option value="month">This Month</option>
                                     <option value="custom">Custom Range</option>
                                 </select>
                                 <!-- Date Range Indicator -->
@@ -423,10 +424,7 @@
                                         class="block w-full text-left px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
                                     This Week
                                 </button>
-                                <button @click="applyQuickFilter('month')" 
-                                        class="block w-full text-left px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded">
-                                    This Month
-                                </button>
+                                
                                 <button @click="clearAllFilters()" 
                                         class="block w-full text-left px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded">
                                     Clear All
@@ -884,6 +882,29 @@
             </div>
         </div>
 
+        <!-- Sync Progress Modal -->
+        <div x-show="showSyncModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center">
+            <div class="absolute inset-0 bg-black bg-opacity-30" @click="showSyncModal = false"></div>
+            <div class="relative bg-white w-full max-w-md mx-4 rounded-lg shadow-lg">
+                <div class="border-b px-4 py-3 flex items-center justify-between">
+                    <h3 class="text-lg font-semibold">Sync Progress</h3>
+                    <button class="text-gray-500 hover:text-gray-700" @click="showSyncModal = false">✕</button>
+                </div>
+                <div class="p-4 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <span class="text-sm" x-text="syncProgressText"></span>
+                    </div>
+                    <p class="text-sm text-gray-600" x-text="syncDetails"></p>
+                </div>
+                <div class="border-t px-4 py-3 flex items-center justify-end space-x-3">
+                    <button @click="showSyncModal = false" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Close</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -894,6 +915,7 @@
                 signatures: [],
                 folders: ['Inbox', 'Sent', 'Drafts', 'Trash', 'Spam'],
                 selectedFolder: 'Inbox',
+                
                 searchQuery: '',
                 startDate: '',
                 endDate: '',
@@ -918,6 +940,10 @@
                 showSuggestions: false,
                 searchSuggestions: [],
                 recentSearches: [],
+                // Sync progress modal state
+                showSyncModal: false,
+                syncProgressText: 'Starting sync...',
+                syncDetails: '',
                 get groupedEmails() {
                     if (!this.emails || this.emails.length === 0) return [];
                     
@@ -1003,6 +1029,16 @@
                         alert('Start date cannot be after end date.');
                         return;
                     }
+                    // Enforce max 5-day range
+                    if (this.startDate && this.endDate) {
+                        const sd = new Date(this.startDate);
+                        const ed = new Date(this.endDate);
+                        const diffDays = Math.ceil((ed - sd) / (1000 * 60 * 60 * 24)) + 1; // inclusive
+                        if (diffDays > 5) {
+                            alert('Selected range is too large. Please choose a range within 5 days.');
+                            return;
+                        }
+                    }
                     
                     // Show sync confirmation with date range
                     let confirmMessage = `Sync emails from ${this.selectedFolder} folder?`;
@@ -1019,13 +1055,12 @@
                     }
                     
                     // Show loading state
-                    const syncButton = document.querySelector('button[\\@click="syncEmails"]');
-                    const originalText = syncButton.textContent;
-                    syncButton.textContent = 'Syncing...';
-                    syncButton.disabled = true;
+                    this.showSyncModal = true;
+                    this.syncProgressText = 'Syncing emails...';
+                    this.syncDetails = '';
                     
                     // Build query parameters
-                    let queryParams = `folder=${this.selectedFolder}&limit=100`;
+                    let queryParams = `folder=${this.selectedFolder}&limit=50`;
                     if (this.startDate) {
                         queryParams += `&start_date=${this.startDate}`;
                     }
@@ -1047,18 +1082,24 @@
                     .then(data => {
                         if (data.success) {
                             this.emails = this.processEmails(data.emails);
-                            alert(data.message);
+                            const count = Array.isArray(data.emails) ? data.emails.length : 0;
+                            this.syncProgressText = 'Sync complete';
+                            this.syncDetails = data.message || '';
+                            if (count >= 50) {
+                                this.syncDetails += (this.syncDetails ? ' ' : '') + 'Note: More than 50 emails may exist; run again with a narrower 5-day range.';
+                            }
                         } else {
-                            alert('Error syncing emails: ' + data.message);
+                            this.syncProgressText = 'Sync failed';
+                            this.syncDetails = data.message || 'Unknown error';
                         }
                     })
                     .catch(error => {
                         console.error('Error syncing emails:', error);
-                        alert('An error occurred while syncing emails.');
+                        this.syncProgressText = 'Sync error';
+                        this.syncDetails = 'An error occurred while syncing emails.';
                     })
                     .finally(() => {
-                        syncButton.textContent = originalText;
-                        syncButton.disabled = false;
+                        // Keep modal open to show result; user can close
                     });
                 },
                 syncAllFolders() {
@@ -1070,6 +1111,17 @@
                         alert('Start date cannot be after end date.');
                         return;
                     }
+                    // Enforce max 5-day range
+                    if (this.startDate && this.endDate) {
+                        const sd = new Date(this.startDate);
+                        const ed = new Date(this.endDate);
+                        const diffDays = Math.ceil((ed - sd) / (1000 * 60 * 60 * 24)) + 1;
+                        if (diffDays > 5) {
+                            alert('Selected range is too large. Please choose a range within 5 days.');
+                            return;
+                        }
+                    }
+
                     
                     // Show sync confirmation with date range
                     let confirmMessage = 'Sync emails from all folders?';
@@ -1085,11 +1137,10 @@
                         return;
                     }
                     
-                    const btn = event.currentTarget;
-                    const original = btn.textContent;
-                    btn.textContent = 'Syncing All...';
-                    btn.disabled = true;
-                    let queryParams = `folder=all&limit=100`;
+                    this.showSyncModal = true;
+                    this.syncProgressText = 'Syncing all folders...';
+                    this.syncDetails = '';
+                    let queryParams = `folder=all&limit=50`;
                     if (this.startDate) queryParams += `&start_date=${this.startDate}`;
                     if (this.endDate) queryParams += `&end_date=${this.endDate}`;
                     if (this.searchQuery) queryParams += `&q=${encodeURIComponent(this.searchQuery)}`;
@@ -1104,18 +1155,21 @@
                     .then(res => {
                         if (res.success) {
                             this.loadEmails();
-                            alert(res.message || 'Sync complete.');
+                            const count = Array.isArray(res.emails) ? res.emails.length : 0;
+                            this.syncProgressText = 'Sync complete';
+                            this.syncDetails = (res.message || 'Sync complete.') + (count >= 50 ? ' Note: More than 50 emails may exist; run again with a narrower 5-day range.' : '');
                         } else {
-                            alert('Sync All failed: ' + (res.message || 'Unknown error'));
+                            this.syncProgressText = 'Sync failed';
+                            this.syncDetails = res.message || 'Unknown error';
                         }
                     })
                     .catch(err => {
                         console.error(err);
-                        alert('An error occurred while syncing all folders.');
+                        this.syncProgressText = 'Sync error';
+                        this.syncDetails = 'An error occurred while syncing all folders.';
                     })
                     .finally(() => {
-                        btn.textContent = original;
-                        btn.disabled = false;
+                        // Modal stays open until user closes
                     });
                 },
                 openCompose(prefill = {}) {
@@ -1411,11 +1465,7 @@
                             this.startDate = startOfWeek.toISOString().split('T')[0];
                             this.endDate = today.toISOString().split('T')[0];
                             break;
-                        case 'month':
-                            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-                            this.startDate = startOfMonth.toISOString().split('T')[0];
-                            this.endDate = today.toISOString().split('T')[0];
-                            break;
+                        
                         case 'custom':
                             // Show advanced filters for custom date selection
                             this.showAdvancedFilters = true;
@@ -1455,11 +1505,7 @@
                             this.startDate = startOfWeek.toISOString().split('T')[0];
                             this.endDate = today.toISOString().split('T')[0];
                             break;
-                        case 'month':
-                            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-                            this.startDate = startOfMonth.toISOString().split('T')[0];
-                            this.endDate = today.toISOString().split('T')[0];
-                            break;
+                        
                     }
                     
                     this.loadEmails();

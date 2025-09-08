@@ -25,7 +25,7 @@ class UpdateEmailAccountRequest extends FormRequest
         $accountId = $this->route('account');
         
         return [
-            'provider' => ['required', 'string', 'in:zoho,gmail,outlook'],
+            'provider' => ['required', 'string', 'in:zoho'],
             'email' => [
                 'required', 
                 'email', 

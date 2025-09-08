@@ -9,10 +9,6 @@
                    class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
                     Add Zoho Account
                 </a>
-                <a href="{{ route('accounts.create') }}" 
-                   class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                    Add Other Account
-                </a>
             </div>
         </div>
     </x-slot>
@@ -125,9 +121,9 @@
                         </div>
                         <h3 class="text-lg font-medium text-gray-900 mb-2">No email accounts</h3>
                         <p class="text-gray-500 mb-4">Get started by adding your first email account.</p>
-                        <a href="{{ route('accounts.create') }}" 
-                           class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                            Add Email Account
+                        <a href="{{ route('accounts.create') }}?provider=zoho" 
+                           class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                            Add Zoho Account
                         </a>
                     </div>
                 </div>

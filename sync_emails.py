@@ -11,6 +11,27 @@ from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+def _create_robust_ssl_context():
+    """Create an SSL context with strong defaults and certifi CA fallback."""
+    try:
+        import certifi
+        cafile = certifi.where()
+    except Exception:
+        cafile = None
+
+    try:
+        context = ssl.create_default_context(cafile=cafile)
+    except Exception:
+        context = ssl.create_default_context()
+
+    try:
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+    except Exception:
+        pass
+
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    return context
 
 def upload_to_s3(file_path, s3_key, bucket_name, aws_access_key, aws_secret_key, region):
     """Upload file to S3 bucket"""
@@ -60,7 +81,12 @@ def create_imap_connection_with_fallback(hostname, port=993):
     try:
         # Try hostname first
         print(f"DEBUG: Attempting IMAP connection to {hostname}:{port}", file=sys.stderr)
-        mail = imaplib.IMAP4_SSL(hostname, port)
+        # Attempt with default context first, then robust context
+        try:
+            mail = imaplib.IMAP4_SSL(hostname, port)
+        except Exception as e1:
+            print(f"DEBUG: Default SSL context failed: {e1}", file=sys.stderr)
+            mail = imaplib.IMAP4_SSL(hostname, port, ssl_context=_create_robust_ssl_context())
         print(f"DEBUG: IMAP connection established using hostname", file=sys.stderr)
         return mail
     except socket.gaierror as e:
@@ -71,7 +97,11 @@ def create_imap_connection_with_fallback(hostname, port=993):
             if ip_addresses:
                 ip_address = ip_addresses[0]
                 print(f"DEBUG: Attempting IMAP connection using IP address: {ip_address}", file=sys.stderr)
-                mail = imaplib.IMAP4_SSL(ip_address, port)
+                try:
+                    mail = imaplib.IMAP4_SSL(ip_address, port)
+                except Exception as e2:
+                    print(f"DEBUG: Default SSL context failed with IP: {e2}", file=sys.stderr)
+                    mail = imaplib.IMAP4_SSL(ip_address, port, ssl_context=_create_robust_ssl_context())
                 print(f"DEBUG: IMAP connection established using IP address", file=sys.stderr)
                 return mail
         except Exception as ip_e:
@@ -141,6 +171,7 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
                  start_date: str = None, end_date: str = None, limit: int = 50,
                  aws_access_key: str = None, aws_secret_key: str = None, 
                  aws_region: str = None, aws_bucket: str = None):
+    provider = (provider or "").strip().lower()
     if provider == "zoho":
         imap_host = "imap.zoho.com"
     else:
@@ -161,17 +192,53 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
         mail.login(email_user, access_token)
         print(f"DEBUG: Login successful", file=sys.stderr)
         
-        print(f"DEBUG: Selecting folder: {folder}", file=sys.stderr)
-        mail.select(folder)
+        # Map UI folder names to provider/IMAP-expected names
+        def map_folder_name(p: str, f: str) -> str:
+            fl = (f or '').strip()
+            if not fl:
+                return 'INBOX'
+            # INBOX is case-insensitive per RFC; map explicitly
+            if fl.lower() == 'inbox':
+                return 'INBOX'
+            # For Zoho, common folders use exact names as below
+            if p == 'zoho':
+                zoho_known = {
+                    'sent': 'Sent',
+                    'drafts': 'Drafts',
+                    'spam': 'Spam',
+                    'trash': 'Trash',
+                    'archive': 'Archive',
+                }
+                return zoho_known.get(fl.lower(), fl)
+            return fl
+
+        mapped_folder = map_folder_name(provider, folder)
+        print(f"DEBUG: Selecting folder: requested='{folder}', mapped='{mapped_folder}'", file=sys.stderr)
+        status, data = mail.select(mapped_folder)
+        if status != 'OK':
+            error_msg = f"Failed to select folder '{mapped_folder}'"
+            print(f"DEBUG: {error_msg}, status={status}, data={data}", file=sys.stderr)
+            return {
+                "error": error_msg,
+                "debug_info": {
+                    "provider": provider,
+                    "requested_folder": folder,
+                    "mapped_folder": mapped_folder,
+                    "select_status": status,
+                    "select_data": data,
+                }
+            }
         print(f"DEBUG: Folder selected successfully", file=sys.stderr)
 
         # Build search criteria
         search_criteria = "ALL"
         if start_date and end_date:
             # Convert dates to IMAP format (DD-MMM-YYYY)
+            # IMPORTANT: IMAP BEFORE is exclusive, so add 1 day to make end date inclusive
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            search_criteria = f'SINCE {start_dt.strftime("%d-%b-%Y")} BEFORE {end_dt.strftime("%d-%b-%Y")}'
+            end_inclusive = end_dt + timedelta(days=1)
+            search_criteria = f'SINCE {start_dt.strftime("%d-%b-%Y")} BEFORE {end_inclusive.strftime("%d-%b-%Y")}'
         elif start_date:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             search_criteria = f'SINCE {start_dt.strftime("%d-%b-%Y")}'
@@ -195,8 +262,22 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
                 
             msg = email.message_from_bytes(msg_data[0][1])
             
-            # Extract message ID for uniqueness
-            message_id = msg.get("Message-ID", f"msg_{i.decode()}")
+            # Extract message ID for uniqueness; fallback to stable IMAP UID
+            message_id = msg.get("Message-ID")
+            imap_uid = None
+            try:
+                uid_status, uid_data = mail.fetch(i, "(UID)")
+                if uid_status == "OK" and uid_data and isinstance(uid_data[0], (bytes, bytearray)):
+                    # Example: b'1 (UID 12345)'
+                    parts = uid_data[0].decode(errors='ignore').split()
+                    if 'UID' in parts:
+                        idx = parts.index('UID')
+                        if idx + 1 < len(parts):
+                            imap_uid = parts[idx + 1].rstrip(')')
+            except Exception as _:
+                imap_uid = None
+            if not message_id:
+                message_id = f"uid_{imap_uid}" if imap_uid else f"msg_{i.decode()}"
             
             # Parse date properly
             date_str = msg.get("Date")
@@ -282,6 +363,7 @@ def fetch_emails(provider: str, email_user: str, access_token: str, folder: str 
             
             messages.append({
                 "message_id": message_id,
+                "imap_uid": imap_uid,
                 "from": msg.get("From"),
                 "to": msg.get("To"),
                 "cc": msg.get("Cc"),

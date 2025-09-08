@@ -39,6 +39,15 @@ class EmailAccount extends Model
     }
 
     /**
+     * Normalize and enforce provider value on assignment.
+     */
+    public function setProviderAttribute($value): void
+    {
+        $normalized = strtolower(trim((string) $value));
+        $this->attributes['provider'] = $normalized === 'zoho' ? 'zoho' : 'zoho';
+    }
+
+    /**
      * Get the emails for the email account.
      */
     public function emails(): HasMany

@@ -41,7 +41,7 @@ class EmailAccountController extends Controller
         try {
             $account = EmailAccount::create([
                 'user_id' => Auth::id(),
-                'provider' => $request->provider,
+                'provider' => 'zoho',
                 'email' => $request->email,
                 'password' => encrypt($request->password),
                 'access_token' => $request->access_token,
@@ -114,7 +114,7 @@ class EmailAccountController extends Controller
 
         try {
             $account->update([
-                'provider' => $request->provider,
+                'provider' => 'zoho',
                 'email' => $request->email,
                 'password' => encrypt($request->password),
                 'access_token' => $request->access_token,
@@ -196,13 +196,33 @@ class EmailAccountController extends Controller
         $account->update(['last_connection_attempt' => now()]);
 
         try {
+            // Validate provider before proceeding
+            $provider = $account->provider ? strtolower($account->provider) : null;
+            $allowedProviders = ['zoho'];
+            if (empty($provider) || !in_array($provider, $allowedProviders, true)) {
+                $errorMessage = 'Invalid or missing provider. Only zoho is supported.';
+                Log::warning('Provider rejected during testConnection', [
+                    'account_id' => $account->id,
+                    'provider' => $account->provider
+                ]);
+                $account->update([
+                    'connection_status' => false,
+                    'last_connection_error' => $errorMessage
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                    'error' => $errorMessage
+                ], 422);
+            }
+
             $python = 'py'; // Use py command for Windows Python launcher
             if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
                 $python = 'python3'; // Use python3 on Unix-like systems
             }
 
             $script = base_path('test_network.py');
-            $args = [$python, $script, $this->getImapHost($account->provider), '993'];
+            $args = [$python, $script, $this->getImapHost(strtolower(trim((string) $account->provider))), '993'];
 
             $process = new Process($args, base_path());
             $process->setTimeout(30);
@@ -295,6 +315,22 @@ class EmailAccountController extends Controller
         $this->authorize('view', $account);
 
         try {
+            // Validate provider before proceeding
+            $provider = $account->provider ? strtolower($account->provider) : null;
+            $allowedProviders = ['zoho'];
+            if (empty($provider) || !in_array($provider, $allowedProviders, true)) {
+                $errorMessage = 'Invalid or missing provider. Only zoho is supported.';
+                Log::warning('Provider rejected during testAuthentication', [
+                    'account_id' => $account->id,
+                    'provider' => $account->provider
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                    'error' => $errorMessage
+                ], 422);
+            }
+
             $python = 'py';
             if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
                 $python = 'python3';
@@ -370,12 +406,8 @@ class EmailAccountController extends Controller
      */
     private function getImapHost(string $provider): string
     {
-        return match ($provider) {
-            'zoho' => 'imap.zoho.com',
-            'gmail' => 'imap.gmail.com',
-            'outlook' => 'outlook.office365.com',
-            default => 'imap.zoho.com'
-        };
+        // We currently support Zoho only; keep for future extensibility
+        return 'imap.zoho.com';
     }
 
     /**
@@ -383,22 +415,40 @@ class EmailAccountController extends Controller
      */
     private function parseNetworkTestResults(string $output): array
     {
-        // Try to parse JSON output first (new format)
-        $lines = explode("\n", $output);
+        // Try to parse JSON output first (new format). The Python script prints
+        // a final JSON object; capture JSON from any line, preferring the most
+        // relevant (that contains expected keys).
+        $lines = explode("\n", (string) $output);
+        $jsonCandidates = [];
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line)) continue;
-            
-            // Check if this line contains JSON
-            if (strpos($line, '{') === 0 && strpos($line, '}') !== false) {
-                $jsonData = json_decode($line, true);
-                if ($jsonData && is_array($jsonData)) {
-                    return $jsonData;
+            if ($line === '') continue;
+
+            if (preg_match('/\{.*\}/', $line, $m)) {
+                $decoded = json_decode($m[0], true);
+                if (is_array($decoded)) {
+                    $jsonCandidates[] = $decoded;
                 }
             }
         }
-        
-        // Fallback to old text parsing method
+
+        // Prefer a candidate that has the expected keys
+        foreach (array_reverse($jsonCandidates) as $candidate) {
+            $expectedKeys = ['dns', 'socket', 'ssl', 'imap'];
+            $hasAll = true;
+            foreach ($expectedKeys as $k) {
+                if (!array_key_exists($k, $candidate)) { $hasAll = false; break; }
+            }
+            if ($hasAll) {
+                return $candidate;
+            }
+        }
+        // Fallback to the last JSON if any
+        if (!empty($jsonCandidates)) {
+            return end($jsonCandidates);
+        }
+
+        // Fallback to text parsing. Accept both "✓ PASS" and "[OK] PASS" forms (case-insensitive).
         $results = [
             'dns' => false,
             'socket' => false,
@@ -407,11 +457,28 @@ class EmailAccountController extends Controller
             'overall' => false
         ];
 
-        if (strpos($output, 'DNS: ✓ PASS') !== false) $results['dns'] = true;
-        if (strpos($output, 'SOCKET: ✓ PASS') !== false) $results['socket'] = true;
-        if (strpos($output, 'SSL: ✓ PASS') !== false) $results['ssl'] = true;
-        if (strpos($output, 'IMAP: ✓ PASS') !== false) $results['imap'] = true;
-        if (strpos($output, '✓ ALL TESTS PASSED') !== false) $results['overall'] = true;
+        $patterns = [
+            'dns' => '/DNS:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
+            'socket' => '/SOCKET:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
+            'ssl' => '/SSL:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
+            'imap' => '/IMAP:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
+        ];
+
+        foreach ($patterns as $key => $regex) {
+            if (preg_match($regex, $output) === 1) {
+                $results[$key] = true;
+            }
+        }
+
+        // If overall not explicitly present, infer it from all checks
+        if ($results['dns'] && $results['socket'] && $results['ssl'] && $results['imap']) {
+            $results['overall'] = true;
+        } else {
+            // Also handle explicit overall marker
+            if (stripos($output, 'ALL TESTS PASSED') !== false) {
+                $results['overall'] = true;
+            }
+        }
 
         return $results;
     }

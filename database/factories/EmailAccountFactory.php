@@ -27,7 +27,7 @@ class EmailAccountFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'provider' => $this->faker->randomElement(['zoho', 'gmail', 'outlook']),
+            'provider' => 'zoho',
             'email' => $this->faker->unique()->safeEmail(),
             'access_token' => $this->faker->sha256(),
             'password' => null,

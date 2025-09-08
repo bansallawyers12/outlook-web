@@ -28,8 +28,6 @@
                                     required>
                                 <option value="">Select a provider</option>
                                 <option value="zoho" {{ (old('provider') == 'zoho' || request('provider') == 'zoho') ? 'selected' : '' }}>Zoho Mail</option>
-                                <option value="gmail" {{ old('provider') == 'gmail' ? 'selected' : '' }}>Gmail</option>
-                                <option value="outlook" {{ old('provider') == 'outlook' ? 'selected' : '' }}>Outlook/Hotmail</option>
                             </select>
                             @error('provider')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -64,7 +62,7 @@
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                             <p class="mt-1 text-sm text-gray-500">
-                                For Gmail and Zoho, you may need to use an app-specific password instead of your regular password.
+                                For Zoho, you may need to use an app-specific password if 2FA is enabled.
                             </p>
                         </div>
 
@@ -111,22 +109,7 @@
                                         <li>If you have 2FA enabled, you must use an app-specific password</li>
                                     </ul>
                                 </div>
-                                <div id="gmail-help" class="hidden">
-                                    <p><strong>Gmail:</strong></p>
-                                    <ul class="list-disc list-inside ml-4 space-y-1">
-                                        <li>Enable 2-factor authentication on your Google account</li>
-                                        <li>Generate an app-specific password in your Google Account settings</li>
-                                        <li>Use the app-specific password, not your regular password</li>
-                                    </ul>
-                                </div>
-                                <div id="outlook-help" class="hidden">
-                                    <p><strong>Outlook/Hotmail:</strong></p>
-                                    <ul class="list-disc list-inside ml-4 space-y-1">
-                                        <li>Enable IMAP in your Outlook settings</li>
-                                        <li>Use your regular password or app-specific password</li>
-                                        <li>If you have 2FA enabled, use an app-specific password</li>
-                                    </ul>
-                                </div>
+                                
                             </div>
                         </div>
 
@@ -156,18 +139,13 @@
             
             // Show relevant help section
             const selectedProvider = this.value;
-            if (selectedProvider) {
-                document.getElementById(selectedProvider + '-help').classList.remove('hidden');
+            if (selectedProvider === 'zoho') {
+                document.getElementById('zoho-help').classList.remove('hidden');
             }
         });
 
         // Show help for pre-selected provider
         const selectedProvider = document.getElementById('provider').value;
-        if (selectedProvider) {
-            document.getElementById(selectedProvider + '-help').classList.remove('hidden');
-        }
-        
-        // If Zoho is pre-selected via URL parameter, show help immediately
         if (selectedProvider === 'zoho') {
             document.getElementById('zoho-help').classList.remove('hidden');
         }

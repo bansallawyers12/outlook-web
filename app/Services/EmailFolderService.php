@@ -82,17 +82,8 @@ class EmailFolderService
         $accountPath = $this->getAccountPath($account);
         $providerFolders = [];
 
-        switch (strtolower($account->provider)) {
-            case 'gmail':
-                $providerFolders = ['Important', 'Starred', 'All Mail'];
-                break;
-            case 'outlook':
-                $providerFolders = ['Junk Email', 'Deleted Items', 'Outbox'];
-                break;
-            case 'zoho':
-                $providerFolders = ['Important', 'All Mail'];
-                break;
-        }
+        // Only Zoho is supported; keep Zoho-specific extras
+        $providerFolders = ['Important', 'All Mail'];
 
         foreach ($providerFolders as $folder) {
             $folderPath = $accountPath . '/' . $folder;

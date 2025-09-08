@@ -61,6 +61,20 @@ class EmailController extends Controller
             ->where('user_id', $request->user()->id)
             ->firstOrFail();
 
+        // Validate provider before proceeding
+        $provider = $account->provider ? strtolower(trim($account->provider)) : null;
+        $allowedProviders = ['zoho'];
+        if (empty($provider) || !in_array($provider, $allowedProviders, true)) {
+            Log::warning('Provider rejected during send', [
+                'account_id' => $account->id,
+                'provider' => $account->provider
+            ]);
+            return response()->json([
+                'ok' => false,
+                'error' => 'Invalid or missing provider. Only zoho is supported.',
+            ], 422);
+        }
+
         $pythonPath = 'py'; // Use py command for Windows Python launcher
         if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
             $pythonPath = 'python3'; // Use python3 on Unix-like systems
@@ -100,7 +114,7 @@ class EmailController extends Controller
         $args = [
             $pythonPath,
             $script,
-            $account->provider,
+            strtolower(trim($account->provider)),
             $account->email,
             $authToken,
             $validated['to'],
@@ -200,10 +214,57 @@ class EmailController extends Controller
             ->where('user_id', Auth::id())
             ->firstOrFail();
 
+        // Validate provider before proceeding
+        $provider = $account->provider ? strtolower(trim($account->provider)) : null;
+        $allowedProviders = ['zoho'];
+        if (empty($provider) || !in_array($provider, $allowedProviders, true)) {
+            Log::warning('Provider rejected during sync', [
+                'account_id' => $account->id,
+                'provider' => $account->provider
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or missing provider. Only zoho is supported.',
+            ], 422);
+        }
+
         $folder = $request->get('folder', 'Inbox');
-        $limit = min($request->get('limit', 50), 200); // Max 200 emails per sync/list
+        // Validate limit strictly (1–200). Reject out-of-range instead of silently clamping.
+        $rawLimit = $request->get('limit', 50);
+        $limit = (int) $rawLimit;
+        if ($limit < 1 || $limit > 200) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid limit. Please choose a value between 1 and 200.',
+            ], 422);
+        }
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
+        // Enforce maximum 5-day inclusive range
+        if (!empty($startDate) && !empty($endDate)) {
+            try {
+                $sd = new \DateTime($startDate);
+                $ed = new \DateTime($endDate);
+                if ($sd > $ed) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Start date cannot be after end date.',
+                    ], 422);
+                }
+                $diff = $sd->diff($ed)->days + 1; // inclusive
+                if ($diff > 5) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selected range is too large. Please choose a range within 5 days.',
+                    ], 422);
+                }
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid date range provided.',
+                ], 422);
+            }
+        }
         $q = trim((string) $request->get('q', ''));
         $searchFields = $request->get('search_fields', 'from,to,subject,body');
         $hasAttachments = $request->get('has_attachments', false);
@@ -242,12 +303,14 @@ class EmailController extends Controller
 
                 $allSyncedEmails = [];
                 $debugOutputs = [];
+                $hadSuccessfulFolder = false;
+                $hadFailedFolder = false;
 
                 foreach ($foldersToSync as $folderName) {
                     $args = [
                         $pythonPath,
                         $script,
-                        $account->provider,
+                        strtolower(trim($account->provider)),
                         $account->email,
                         $authToken,
                         $folderName,
@@ -303,7 +366,12 @@ class EmailController extends Controller
                     $output = trim($process->getOutput());
                     $errorOutput = trim($process->getErrorOutput());
                     if (!empty($errorOutput)) {
-                        $debugOutputs[] = $errorOutput;
+                        $debugOutputs[] = [
+                            'folder' => $folderName,
+                            'stderr' => $errorOutput,
+                            'stdout' => $output,
+                            'exit_code' => $process->getExitCode(),
+                        ];
                     }
 
                     if (!$process->isSuccessful()) {
@@ -314,6 +382,7 @@ class EmailController extends Controller
                             'stdout' => $output,
                             'exit_code' => $process->getExitCode()
                         ]);
+                        $hadFailedFolder = true;
                         continue; // Continue with other folders instead of failing all
                     }
 
@@ -326,6 +395,13 @@ class EmailController extends Controller
                             'json_error' => json_last_error_msg(),
                             'output' => $output,
                         ]);
+                        $hadFailedFolder = true;
+                        $debugOutputs[] = [
+                            'folder' => $folderName,
+                            'error' => 'Invalid JSON from Python script',
+                            'json_error' => json_last_error_msg(),
+                            'stdout' => $output,
+                        ];
                         continue;
                     }
 
@@ -336,15 +412,32 @@ class EmailController extends Controller
                             'error' => $synced['error'],
                             'debug_info' => $synced['debug_info'] ?? null
                         ]);
+                        $hadFailedFolder = true;
+                        $debugOutputs[] = [
+                            'folder' => $folderName,
+                            'error' => $synced['error'],
+                            'debug_info' => $synced['debug_info'] ?? null,
+                        ];
                         continue;
                     }
 
                     if (is_array($synced)) {
                         $allSyncedEmails = array_merge($allSyncedEmails, $synced);
+                        $hadSuccessfulFolder = true;
                     }
                 }
 
                 $syncedEmails = $allSyncedEmails;
+
+                // If no folders succeeded at all, surface an explicit error with debug details
+                if (!$hadSuccessfulFolder) {
+                    $response = [
+                        'success' => false,
+                        'message' => 'Sync failed for all folders',
+                        'errors' => $debugOutputs,
+                    ];
+                    return response()->json($response, 422);
+                }
 
                 if (isset($syncedEmails['error'])) {
                     Log::error("Email sync error via controller", [

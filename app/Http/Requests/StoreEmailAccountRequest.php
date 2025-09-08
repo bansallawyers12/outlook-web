@@ -22,7 +22,7 @@ class StoreEmailAccountRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'provider' => ['required', 'string', 'in:zoho,gmail,outlook'],
+            'provider' => ['required', 'string', 'in:zoho'],
             'email' => ['required', 'email', 'unique:email_accounts,email'],
             'password' => ['required', 'string', 'min:6'],
             'access_token' => ['nullable', 'string'],
