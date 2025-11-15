@@ -19,7 +19,7 @@ class EmailAttachmentTest extends TestCase
         $user = User::factory()->create();
         $account = EmailAccount::factory()->create([
             'user_id' => $user->id,
-            'provider' => 'zoho',
+            'provider' => 'brevo',
             'email' => 'test@example.com',
             'access_token' => 'test_token'
         ]);
@@ -50,7 +50,7 @@ class EmailAttachmentTest extends TestCase
         $user = User::factory()->create();
         $account = EmailAccount::factory()->create([
             'user_id' => $user->id,
-            'provider' => 'zoho',
+            'provider' => 'brevo',
             'email' => 'test@example.com',
             'access_token' => 'test_token'
         ]);
@@ -76,7 +76,7 @@ class EmailAttachmentTest extends TestCase
         $user = User::factory()->create();
         $account = EmailAccount::factory()->create([
             'user_id' => $user->id,
-            'provider' => 'zoho',
+            'provider' => 'brevo',
             'email' => 'test@example.com',
             'access_token' => 'test_token'
         ]);

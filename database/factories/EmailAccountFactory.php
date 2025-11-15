@@ -27,7 +27,7 @@ class EmailAccountFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'provider' => 'zoho',
+            'provider' => 'brevo',
             'email' => $this->faker->unique()->safeEmail(),
             'access_token' => $this->faker->sha256(),
             'password' => null,

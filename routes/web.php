@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\LabelController;
@@ -43,11 +42,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/emails/draft/{id}', [EmailController::class, 'deleteDraft'])->name('emails.draft.delete');
     Route::get('/emails/reply/{id}', [EmailController::class, 'getReplyData'])->name('emails.reply.get');
     Route::get('/emails/content/{id}', [EmailController::class, 'getEmailContent'])->name('emails.content.get');
+    Route::get('/emails/{id}/eml-url', [EmailController::class, 'getEmailEmlUrl'])->name('emails.eml-url');
     Route::get('/emails/compose', [EmailController::class, 'compose'])->name('emails.compose');
     Route::get('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.get');
     Route::post('/emails/sync/{accountId}', [EmailController::class, 'sync'])->name('emails.sync.post');
     Route::post('/emails/bulk-action', [EmailController::class, 'bulkAction'])->name('emails.bulk-action');
-    Route::post('/auth/zoho/add', [AuthController::class, 'addZohoAccount'])->name('auth.zoho.add');
 
     // Attachment download and view
     Route::get('/attachments/{id}/download', [AttachmentController::class, 'download'])->name('attachments.download');
@@ -70,8 +69,4 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
-
-// OAuth routes
-Route::get('/auth/{provider}', [AuthController::class, 'redirect'])->name('oauth.redirect');
-Route::get('/auth/{provider}/callback', [AuthController::class, 'callback'])->name('oauth.callback');
 

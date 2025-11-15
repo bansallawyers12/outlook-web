@@ -22,9 +22,9 @@ class StoreEmailAccountRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'provider' => ['required', 'string', 'in:zoho'],
+            'provider' => ['required', 'string', 'in:brevo'],
             'email' => ['required', 'email', 'unique:email_accounts,email'],
-            'password' => ['required', 'string', 'min:6'],
+            'password' => ['required', 'string', 'min:32'],
             'access_token' => ['nullable', 'string'],
             'refresh_token' => ['nullable', 'string'],
         ];
@@ -37,12 +37,12 @@ class StoreEmailAccountRequest extends FormRequest
     {
         return [
             'provider.required' => 'Please select an email provider.',
-            'provider.in' => 'Please select a valid email provider.',
+            'provider.in' => 'Only Brevo is supported at this time.',
             'email.required' => 'Email address is required.',
             'email.email' => 'Please enter a valid email address.',
             'email.unique' => 'This email address is already registered.',
-            'password.required' => 'Password is required.',
-            'password.min' => 'Password must be at least 6 characters.',
+            'password.required' => 'Brevo SMTP key is required.',
+            'password.min' => 'Brevo SMTP key must be at least 32 characters.',
         ];
     }
 }

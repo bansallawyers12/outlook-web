@@ -1,6 +1,6 @@
 # Outlook Web - Email Management Application
 
-A Laravel-based web application for managing email accounts and sending emails through various providers, with a focus on Zoho Mail integration.
+A Laravel-based web application for managing email accounts and sending/receiving through Brevo (formerly Sendinblue).
 
 ## Purpose
 
@@ -8,14 +8,14 @@ A Laravel-based web application for managing email accounts and sending emails t
 - Synchronize and store messages locally for fast search and offline-friendly access.
 - Provide reliable SMTP sending with provider-specific settings and diagnostics.
 - Offer a Windows/XAMPP-friendly stack that is easy to run on a developer machine.
-- Serve as a reference implementation for integrating OAuth (Zoho), IMAP sync, and SMTP send with Laravel.
+- Serve as a reference implementation for integrating Brevo SMTP + inbound webhooks with Laravel.
 
 ## Features
 
 - **User Authentication**: Registration, login, profile management (Laravel Breeze)
 - **Authorization**: Policies for per-user access to `EmailAccount` resources
 - **Multi-Account**: Connect and manage multiple accounts per user
-- **OAuth & Password Auth**: OAuth (Zoho) and classic username/password
+- **Brevo SMTP & Webhooks**: Native SMTP sending and inbound processing via Brevo
 - **Connection & Auth Tests**: Validate connectivity and credentials before saving
 - **IMAP Email Sync**: Incremental sync with Message-ID de-duplication
 - **Cloud Email Storage**: Automatic AWS S3 storage for email content and attachments
@@ -72,7 +72,7 @@ A Laravel-based web application for managing email accounts and sending emails t
 - **Database**: SQLite (default) or MySQL/PostgreSQL
 - **Cloud Storage**: AWS S3 for email content and attachments
 - **Email Processing**: Python 3.x scripts for IMAP/SMTP operations
-- **Authentication**: Laravel Breeze with OAuth support (Laravel Socialite)
+- **Authentication**: Laravel Breeze (session-based)
 - **Testing**: Pest PHP testing framework
 - **Development Tools**: Laravel Pail (log viewer), Laravel Pint (code style)
 
@@ -147,10 +147,10 @@ A Laravel-based web application for managing email accounts and sending emails t
    AWS_BUCKET=your_bucket_name
    ```
 
-10. **(Optional) Configure OAuth for Zoho**
-   - Create a client in your Zoho developer console
-   - Set the redirect URL to: `http://localhost:8000/auth/zoho/callback` (adjust host if different)
-   - Add the credentials to your `.env` (see Configuration section)
+10. **Configure Brevo**
+   - Verify your sending domain inside the Brevo dashboard (SPF + DKIM).
+   - Generate an SMTP key under **SMTP & API → API Keys** and store it in your `.env`.
+   - Create an inbound parse rule that POSTs to `{{APP_URL}}/api/brevo/inbound` and set the same signing secret as `BREVO_INBOUND_SECRET`.
 
 11. **Start services**
     - Development script (recommended):
@@ -209,16 +209,15 @@ Note: If you're running under XAMPP/Apache, point your virtual host/document roo
 ## Usage Guide
 
 ### 1) Create or connect an email account
-- Go to `Accounts > Create` and choose either:
-  - OAuth (Zoho): Click "Connect with Zoho", complete consent, and save
-  - Password auth: Enter IMAP/SMTP credentials (for supported providers)
-- Use "Test Connection" and/or "Test Authentication" before saving.
+- Go to `Accounts > Create`, choose **Brevo**, and provide:
+  - The sending address you own inside Brevo
+  - Your Brevo SMTP key (generate under SMTP & API → API Keys)
+- Use "Test Connection" / "Test Authentication" to verify DNS + credentials.
 
 ### 2) Synchronize emails
-- Navigate to `Emails > Sync` for the chosen account.
-- Optionally specify folder, limit, or date range.
-- Start sync and monitor progress; errors appear in logs and UI.
-- **Local Storage**: All synced emails are automatically saved to local folders for offline access.
+- Configure Brevo's inbound parse webhook to deliver to `/api/brevo/inbound`.
+- New messages are stored automatically; use `Emails > Sync` to filter/search the stored data (no polling required).
+- **Local Storage**: All inbound emails are automatically saved to local folders/S3 for offline access.
 
 ### 3) View and manage emails
 - **Dashboard Interface**: Modern email management with advanced search and filtering capabilities
@@ -251,7 +250,7 @@ Note: If you're running under XAMPP/Apache, point your virtual host/document roo
 - Use `Compose` (or API endpoint) to send via SMTP.
 - Save drafts for later completion and editing.
 - Reply to emails with pre-filled recipient and subject.
-- Ensure your account has valid SMTP settings or OAuth token.
+- Ensure your account has a valid Brevo SMTP key configured.
 
 ### 7) AWS S3 Cloud Storage
 - **Automatic S3 Upload**: Each email is automatically uploaded to AWS S3 as EML files
@@ -299,11 +298,7 @@ Note: If you're running under XAMPP/Apache, point your virtual host/document roo
 - **Error Handling**: User-friendly error messages and recovery options
 
 ### 10) Diagnostics
-- Run network diagnostics:
-  ```bash
-  python test_network.py imap.zoho.com 993
-  ```
-- See JSON reports written at repository root (e.g., `network_test_*.json`).
+- Use the **Test Connection** button on any account to run DNS/TLS checks against Brevo.
 - Test local folder functionality:
   ```bash
   php artisan emails:test-folders [account_id]
@@ -316,7 +311,7 @@ Note: If you're running under XAMPP/Apache, point your virtual host/document roo
 ## Processes
 
 - **Sync Process**: Validate network → connect IMAP → fetch headers/bodies → parse parts → store email/attachments → upload to AWS S3 → save to database → record Message-ID to prevent duplicates.
-- **Send Process**: Build SMTP connection with provider settings → TLS → authenticate (password or OAuth token if supported) → send → record result.
+- **Send Process**: Build SMTP connection with Brevo relay → STARTTLS → authenticate using the SMTP key → send → record result.
 - **Draft Process**: Save email composition state → store in database → allow editing and resuming → send when ready.
 - **S3 Storage Process**: Create S3 folder structure → upload EML files to S3 → upload attachments to S3 → maintain organized storage.
 - **EML Viewer Process**: Load email from database → fetch EML content from S3 → parse EML content → display with source indicators.
@@ -337,7 +332,7 @@ composer run test
 
 - **Models**: 
   - `User` - User authentication and profile management
-  - `EmailAccount` - Email account storage with OAuth and password support
+  - `EmailAccount` - Email account storage with Brevo SMTP key encryption
   - `Email` - Synchronized email storage with full metadata
   - `EmailDraft` - Email draft storage for composing messages
   - `Attachment` - Email attachment management and storage
@@ -345,29 +340,27 @@ composer run test
 - **Controllers**: 
   - `EmailController` - Handles email sending, synchronization, draft management, and bulk operations
   - `EmailAccountController` - Manages email account CRUD operations and connection testing
-  - `AuthController` - Manages OAuth authentication flows
+  - `BrevoInboundController` - Handles inbound webhook deliveries from Brevo
   - `ProfileController` - User profile management
   - `AttachmentController` - Handles attachment downloads and viewing
   - `LabelController` - Manages email labeling and categorization
 - **Services**:
   - `EmailFolderService` - Manages AWS S3 storage and EML file operations
 - **Console Commands**:
-  - `SyncEmails` - Command-line email synchronization
+  - `SyncEmails` - Legacy sync command (now informs you to rely on Brevo webhooks)
   - `TestEmailFolders` - Test local folder functionality and email storage
   - `RefreshEmailData` - Clear all email data and reset sync state for fresh start
 - **Python Scripts**:
   - `send_mail.py` - SMTP email sending with provider-specific configuration
-  - `sync_emails.py` - IMAP email synchronization with AWS S3 upload support
-  - `test_network.py` - Network diagnostics for troubleshooting connectivity issues
 - **Database Migrations**: User management, email accounts, email storage, authentication tokens, read/unread status, flagged emails, and search indexes
 - **Policies**: `EmailAccountPolicy` - Authorization for email account access
 
 ### Email Provider Support
 
 Currently supports:
-- **Zoho Mail** (IMAP/SMTP)
+- **Brevo** (SMTP + inbound webhooks)
 
-Planned support for additional providers through OAuth integration.
+Planned support for additional providers through future adapters.
 
 ### AWS S3 Storage Structure
 
@@ -394,7 +387,7 @@ s3://your-bucket/emails/
 
 **Features:**
 - **Automatic S3 Upload**: EML files and attachments are automatically uploaded to S3
-- **Organized Structure**: Folders match email provider structure (Gmail, Outlook, Zoho)
+- **Organized Structure**: Folders match your chosen provider structure
 - **EML Format**: Emails stored as `.eml` files in RFC 2822 format for maximum compatibility
 - **Cloud Access**: All emails accessible from anywhere with internet connection
 - **Scalable Storage**: Unlimited storage capacity with AWS S3
@@ -402,8 +395,8 @@ s3://your-bucket/emails/
 
 ### Schedules and Queues
 
-- Use Laravel's scheduler (`schedule:run`) to trigger periodic sync jobs.
-- Use queue worker (`queue:listen` or `queue:work`) for background tasks.
+- Use Laravel's scheduler (`schedule:run`) for housekeeping jobs (cleanup, reports, etc.).
+- Use a queue worker (`queue:listen` or `queue:work`) for background-heavy tasks such as attachment processing.
 
 ### Python Scripts
 
@@ -411,38 +404,16 @@ The application uses Python scripts for email operations to leverage existing em
 
 #### `send_mail.py`
 - **Purpose**: Send emails via SMTP
-- **Usage**: `python send_mail.py <provider> <email_user> <token> <to> <subject> <body>`
+- **Usage**: `python send_mail.py <provider> <login_user> <token> <to> <subject> <body> [cc] [bcc] [attachments_json] [from_email] [--dry-run]`
 - **Features**: 
   - Provider-specific SMTP configuration
   - TLS encryption support
   - Error handling and timeout management
 
-#### `sync_emails.py`
-- **Purpose**: Synchronize emails from IMAP servers
-- **Usage**: `python sync_emails.py <provider> <email_user> <token> [folder] [limit] [start_date] [end_date]`
-- **Features**:
-  - Comprehensive error handling with detailed debugging
-  - Network connectivity testing before connection attempts
-  - Support for date range filtering
-  - Message ID tracking for duplicate prevention
-  - Multi-part email body extraction
-
-#### `test_network.py`
-- **Purpose**: Network diagnostics for troubleshooting email connectivity
-- **Usage**: `python test_network.py <hostname> [port]`
-- **Features**:
-  - DNS resolution testing
-  - Socket connection testing
-  - SSL certificate validation
-  - IMAP connection testing
-  - Detailed diagnostic reports saved to JSON files
-
 ## API Endpoints
 
 ### Public Routes
 - `GET /` - Welcome page
-- `GET /auth/{provider}` - OAuth redirect
-- `GET /auth/{provider}/callback` - OAuth callback
 
 ### Protected Routes (Authentication Required)
 - `GET /dashboard` - Main dashboard with email account overview
@@ -473,7 +444,9 @@ The application uses Python scripts for email operations to leverage existing em
 - `GET /emails/sync/{accountId}` - Show email sync form with advanced filtering
 - `POST /emails/sync/{accountId}` - Synchronize emails from account with search parameters
 - `POST /emails/bulk-action` - Perform bulk operations on selected emails
-- `POST /auth/zoho/add` - Add Zoho account via OAuth
+
+### Webhooks
+- `POST /api/brevo/inbound` - Inbound parse endpoint used by Brevo
 
 ### Attachments
 - `GET /attachments/{id}/download` - Download email attachment
@@ -484,9 +457,6 @@ The application uses Python scripts for email operations to leverage existing em
 - `POST /labels/apply` - Apply label to email
 - `POST /labels/remove` - Remove label from email
 
-### OAuth
-- `GET /auth/{provider}` - OAuth redirect
-- `GET /auth/{provider}/callback` - OAuth callback
 
 ## Configuration
 
@@ -503,13 +473,11 @@ APP_URL=https://cc1fa11dc513.ngrok-free.app
 DB_CONNECTION=sqlite
 DB_DATABASE=/absolute/path/to/database/database.sqlite
 
-# Email provider configurations
-# (Add as needed for OAuth setup)
-
-# Zoho OAuth (example)
-ZOHO_CLIENT_ID=
-ZOHO_CLIENT_SECRET=
-ZOHO_REDIRECT_URI="http://localhost:8000/auth/zoho/callback"
+# Brevo configuration
+BREVO_SMTP_HOST=smtp-relay.brevo.com
+BREVO_SMTP_PORT=587
+BREVO_SMTP_USER=apikey
+BREVO_INBOUND_SECRET=your_shared_secret
 
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID=your_access_key
@@ -545,13 +513,11 @@ This project is open-sourced software licensed under the [MIT license](https://o
 ## Notes
 
 - The application is designed to work with XAMPP on Windows [[memory:7264487]]
-- Python scripts are used for email operations to leverage existing email libraries
-- OAuth integration for Zoho is implemented using Laravel Socialite
+- `send_mail.py` powers SMTP delivery (no external dependencies required)
+- Brevo inbound webhooks (`/api/brevo/inbound`) are used for receiving mail
 - The application uses Laravel's built-in authentication and session management
-- Email accounts support both OAuth tokens and password authentication
 - **AWS S3 Cloud Storage**: All synced emails are automatically saved to AWS S3 as EML files for cloud access
-- Network diagnostics are available for troubleshooting email connectivity issues
-- All Python scripts use only standard library modules (no external dependencies required)
+- Network diagnostics can be performed via the in-app "Test Connection" buttons
 - The application includes comprehensive error handling and logging for email operations
 - Email files are stored in RFC 2822 format for maximum compatibility with email clients
 
@@ -559,13 +525,13 @@ This project is open-sourced software licensed under the [MIT license](https://o
 
 - "Database file does not exist" with SQLite: ensure `database/database.sqlite` exists and `.env` `DB_DATABASE` points to its absolute path on Windows, e.g. `C:\\xampp\\htdocs\\outlook-web\\database\\database.sqlite`.
 - 404 on assets/images: run `php artisan storage:link` and ensure you built assets with `npm run dev` (dev) or `npm run build` (prod).
-- Email sync/send issues: check `storage/logs/laravel.log`. Use `python test_network.py imap.zoho.com 993` to validate connectivity.
-- OAuth redirect mismatch: verify `APP_URL` and `ZOHO_REDIRECT_URI` match your configured callback in the provider.
+- Email sync/send issues: check `storage/logs/laravel.log` and re-run the Brevo connection/auth tests from the Accounts UI.
+- Verify that Brevo's inbound parse URL points to `https://<your-host>/api/brevo/inbound` and that `BREVO_INBOUND_SECRET` matches the value configured in Brevo.
 
 ## Security
 
-- Keep OAuth secrets in `.env` and never commit them.
-- Rotate tokens and passwords regularly; prefer OAuth over password auth when possible.
+- Store Brevo SMTP keys and inbound secrets in `.env` and never commit them.
+- Rotate SMTP keys regularly; remove unused webhook secrets.
 - Limit access via Laravel policies; ensure accounts are only visible to their owners.
 
 ## Backup & Data
@@ -579,6 +545,6 @@ This project is open-sourced software licensed under the [MIT license](https://o
 
 - "Nothing appears after login" → Ensure migrations ran and queues/Vite are running in dev.
 - "Attachments not accessible" → Run `php artisan storage:link` and verify file permissions.
-- "SMTP auth failed" → Confirm provider settings, app passwords, or OAuth tokens are valid and not expired.
+- "SMTP auth failed" → Confirm your Brevo SMTP key is valid and not revoked.
 - "Want to start fresh with email data" → Use `php artisan emails:refresh --force` to clear all email data and start over.
 - "Local folders not created" → Use `php artisan emails:test-folders` to verify folder functionality.

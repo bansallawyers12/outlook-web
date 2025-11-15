@@ -19,17 +19,17 @@ return new class extends Migration
         // Backfill any NULL provider
         DB::table('email_accounts')
             ->whereNull('provider')
-            ->update(['provider' => 'zoho']);
+            ->update(['provider' => 'brevo']);
 
         // Backfill empty string provider
         DB::table('email_accounts')
             ->where('provider', '=','')
-            ->update(['provider' => 'zoho']);
+            ->update(['provider' => 'brevo']);
 
-        // Backfill any non-zoho literal values (case-sensitive here; normalization handled at model/controller)
+        // Backfill any non-brevo literal values (case-sensitive here; normalization handled at model/controller)
         DB::table('email_accounts')
-            ->where('provider', '!=', 'zoho')
-            ->update(['provider' => 'zoho']);
+            ->where('provider', '!=', 'brevo')
+            ->update(['provider' => 'brevo']);
     }
 
     /**

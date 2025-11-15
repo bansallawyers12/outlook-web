@@ -82,8 +82,8 @@ class EmailFolderService
         $accountPath = $this->getAccountPath($account);
         $providerFolders = [];
 
-        // Only Zoho is supported; keep Zoho-specific extras
-        $providerFolders = ['Important', 'All Mail'];
+        // Brevo uses webhook-driven folders; no provider-specific defaults yet
+        $providerFolders = [];
 
         foreach ($providerFolders as $folder) {
             $folderPath = $accountPath . '/' . $folder;

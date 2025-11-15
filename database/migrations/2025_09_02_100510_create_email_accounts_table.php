@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('email_accounts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->string('provider')->default('zoho'); // Zoho-only
+            $table->string('provider')->default('brevo');
             $table->string('email');
             $table->string('access_token');
             $table->string('refresh_token')->nullable();

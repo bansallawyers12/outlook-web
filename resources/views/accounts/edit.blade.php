@@ -28,7 +28,7 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('provider') border-red-500 @enderror"
                                     required>
                                 <option value="">Select a provider</option>
-                                <option value="zoho" {{ old('provider', $account->provider) == 'zoho' ? 'selected' : '' }}>Zoho Mail</option>
+                                <option value="brevo" {{ old('provider', $account->provider) == 'brevo' ? 'selected' : '' }}>Brevo (SMTP + Webhooks)</option>
                             </select>
                             @error('provider')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -53,50 +53,18 @@
                         <!-- Password -->
                         <div>
                             <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-                                Password / App Password
+                                Brevo SMTP Key
                             </label>
                             <input type="password" name="password" id="password" 
-                                   value="{{ old('password', $account->password) }}"
+                                   value=""
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('password') border-red-500 @enderror"
-                                   placeholder="Enter your password or app-specific password"
-                                   required>
+                                   placeholder="Enter your Brevo SMTP key">
                             @error('password')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                             <p class="mt-1 text-sm text-gray-500">
-                                For Zoho, you may need to use an app-specific password if 2FA is enabled.
+                                Keys are not displayed for security. Leave blank to keep the existing key.
                             </p>
-                        </div>
-
-                        <!-- Access Token (Optional) -->
-                        <div>
-                            <label for="access_token" class="block text-sm font-medium text-gray-700 mb-2">
-                                Access Token (Optional)
-                            </label>
-                            <input type="text" name="access_token" id="access_token" 
-                                   value="{{ old('access_token', $account->access_token) }}"
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('access_token') border-red-500 @enderror"
-                                   placeholder="OAuth access token (if using OAuth)">
-                            @error('access_token')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                            <p class="mt-1 text-sm text-gray-500">
-                                Leave empty if using password authentication.
-                            </p>
-                        </div>
-
-                        <!-- Refresh Token (Optional) -->
-                        <div>
-                            <label for="refresh_token" class="block text-sm font-medium text-gray-700 mb-2">
-                                Refresh Token (Optional)
-                            </label>
-                            <input type="text" name="refresh_token" id="refresh_token" 
-                                   value="{{ old('refresh_token', $account->refresh_token) }}"
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('refresh_token') border-red-500 @enderror"
-                                   placeholder="OAuth refresh token (if using OAuth)">
-                            @error('refresh_token')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
                         </div>
 
                         <!-- Test Connection Section -->
@@ -124,12 +92,12 @@
                         <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
                             <h4 class="text-sm font-medium text-blue-800 mb-2">Setup Instructions:</h4>
                             <div class="text-sm text-blue-700 space-y-2">
-                                <div id="zoho-help" class="hidden">
-                                    <p><strong>Zoho Mail:</strong></p>
+                                <div id="brevo-help" class="hidden">
+                                    <p><strong>Brevo:</strong></p>
                                     <ul class="list-disc list-inside ml-4 space-y-1">
-                                        <li>Enable IMAP in your Zoho Mail settings</li>
-                                        <li>Use your regular password or generate an app-specific password</li>
-                                        <li>If you have 2FA enabled, you must use an app-specific password</li>
+                                        <li>Manage SMTP keys from Brevo → SMTP &amp; API → API Keys.</li>
+                                        <li>Set the inbound parse URL to <code>{{ url('/api/brevo/inbound') }}</code>.</li>
+                                        <li>Update <code>BREVO_INBOUND_SECRET</code> to match the webhook security token.</li>
                                     </ul>
                                 </div>
                                 
@@ -162,15 +130,15 @@
             
             // Show relevant help section
             const selectedProvider = this.value;
-            if (selectedProvider === 'zoho') {
-                document.getElementById('zoho-help').classList.remove('hidden');
+            if (selectedProvider === 'brevo') {
+                document.getElementById('brevo-help').classList.remove('hidden');
             }
         });
 
         // Show help for current provider
         const currentProvider = document.getElementById('provider').value;
-        if (currentProvider === 'zoho') {
-            document.getElementById('zoho-help').classList.remove('hidden');
+        if (currentProvider === 'brevo') {
+            document.getElementById('brevo-help').classList.remove('hidden');
         }
 
         function testConnection() {
@@ -196,9 +164,8 @@
                     let html = '<div class="text-green-600 font-medium">Network Connection Test Results:</div>';
                     html += '<div class="mt-2 space-y-1 text-sm">';
                     html += `<div>DNS Resolution: <span class="${data.results.dns ? 'text-green-600' : 'text-red-600'}">${data.results.dns ? '✓ PASS' : '✗ FAIL'}</span></div>`;
-                    html += `<div>Socket Connection: <span class="${data.results.socket ? 'text-green-600' : 'text-red-600'}">${data.results.socket ? '✓ PASS' : '✗ FAIL'}</span></div>`;
-                    html += `<div>SSL Connection: <span class="${data.results.ssl ? 'text-green-600' : 'text-red-600'}">${data.results.ssl ? '✓ PASS' : '✗ FAIL'}</span></div>`;
-                    html += `<div>IMAP Connection: <span class="${data.results.imap ? 'text-green-600' : 'text-red-600'}">${data.results.imap ? '✓ PASS' : '✗ FAIL'}</span></div>`;
+                        html += `<div>SMTP Socket (${data.results.port ?? ''}): <span class="${data.results.socket ? 'text-green-600' : 'text-red-600'}">${data.results.socket ? '✓ PASS' : '✗ FAIL'}</span></div>`;
+                        html += `<div>TLS Handshake: <span class="${data.results.tls ? 'text-green-600' : 'text-red-600'}">${data.results.tls ? '✓ PASS' : '✗ FAIL'}</span></div>`;
                     html += '</div>';
                     resultsDiv.innerHTML = html;
                 } else {

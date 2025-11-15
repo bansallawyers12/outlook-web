@@ -5,9 +5,9 @@
                 {{ __('Email Accounts') }}
             </h2>
             <div class="flex gap-2">
-                <a href="{{ route('accounts.create') }}?provider=zoho" 
+                <a href="{{ route('accounts.create') }}?provider=brevo" 
                    class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
-                    Add Zoho Account
+                    Add Brevo Account
                 </a>
             </div>
         </div>
@@ -121,9 +121,9 @@
                         </div>
                         <h3 class="text-lg font-medium text-gray-900 mb-2">No email accounts</h3>
                         <p class="text-gray-500 mb-4">Get started by adding your first email account.</p>
-                        <a href="{{ route('accounts.create') }}?provider=zoho" 
+                        <a href="{{ route('accounts.create') }}?provider=brevo" 
                            class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
-                            Add Zoho Account
+                            Add Brevo Account
                         </a>
                     </div>
                 </div>
@@ -209,9 +209,8 @@
             
             let html = '<div class="space-y-2">';
             html += `<div class="flex justify-between"><span>DNS Resolution:</span> <span class="${results.dns ? 'text-green-600' : 'text-red-600'}">${results.dns ? '✓ PASS' : '✗ FAIL'}</span></div>`;
-            html += `<div class="flex justify-between"><span>Socket Connection:</span> <span class="${results.socket ? 'text-green-600' : 'text-red-600'}">${results.socket ? '✓ PASS' : '✗ FAIL'}</span></div>`;
-            html += `<div class="flex justify-between"><span>SSL Connection:</span> <span class="${results.ssl ? 'text-green-600' : 'text-red-600'}">${results.ssl ? '✓ PASS' : '✗ FAIL'}</span></div>`;
-            html += `<div class="flex justify-between"><span>IMAP Connection:</span> <span class="${results.imap ? 'text-green-600' : 'text-red-600'}">${results.imap ? '✓ PASS' : '✗ FAIL'}</span></div>`;
+            html += `<div class="flex justify-between"><span>SMTP Socket (${results.port ?? ''}):</span> <span class="${results.socket ? 'text-green-600' : 'text-red-600'}">${results.socket ? '✓ PASS' : '✗ FAIL'}</span></div>`;
+            html += `<div class="flex justify-between"><span>TLS Handshake:</span> <span class="${results.tls ? 'text-green-600' : 'text-red-600'}">${results.tls ? '✓ PASS' : '✗ FAIL'}</span></div>`;
             html += '</div>';
             
             resultsDiv.innerHTML = html;

@@ -35,10 +35,11 @@ return [
         ],
     ],
 
-    'zoho' => [
-        'client_id' => env('ZOHO_CLIENT_ID'),
-        'client_secret' => env('ZOHO_CLIENT_SECRET'),
-        'redirect' => env('ZOHO_REDIRECT_URI', 'http://localhost:8000/auth/zoho/callback'),
+    'brevo' => [
+        'smtp_host' => env('BREVO_SMTP_HOST', 'smtp-relay.brevo.com'),
+        'smtp_port' => env('BREVO_SMTP_PORT', 587),
+        'smtp_user' => env('BREVO_SMTP_USER', 'apikey'),
+        'inbound_secret' => env('BREVO_INBOUND_SECRET'),
     ],
 
 ];

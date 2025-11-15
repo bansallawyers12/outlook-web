@@ -41,10 +41,10 @@ class EmailAccountController extends Controller
         try {
             $account = EmailAccount::create([
                 'user_id' => Auth::id(),
-                'provider' => 'zoho',
+                'provider' => 'brevo',
                 'email' => $request->email,
                 'password' => encrypt($request->password),
-                'access_token' => $request->access_token,
+                'access_token' => null,
                 'refresh_token' => $request->refresh_token,
             ]);
 
@@ -99,10 +99,11 @@ class EmailAccountController extends Controller
     {
         $this->authorize('update', $account);
 
-        // Decrypt password for editing
-        $account->password = $account->password ? decrypt($account->password) : '';
+        $account->password = '';
 
-        return view('accounts.edit', compact('account'));
+        return view('accounts.edit', [
+            'account' => $account,
+        ]);
     }
 
     /**
@@ -113,13 +114,18 @@ class EmailAccountController extends Controller
         $this->authorize('update', $account);
 
         try {
-            $account->update([
-                'provider' => 'zoho',
+            $payload = [
+                'provider' => 'brevo',
                 'email' => $request->email,
-                'password' => encrypt($request->password),
-                'access_token' => $request->access_token,
+                'access_token' => null,
                 'refresh_token' => $request->refresh_token,
-            ]);
+            ];
+
+            if ($request->filled('password')) {
+                $payload['password'] = encrypt($request->password);
+            }
+
+            $account->update($payload);
 
             Log::info('Email account updated', [
                 'user_id' => Auth::id(),
@@ -196,97 +202,102 @@ class EmailAccountController extends Controller
         $account->update(['last_connection_attempt' => now()]);
 
         try {
-            // Validate provider before proceeding
-            $provider = $account->provider ? strtolower($account->provider) : null;
-            $allowedProviders = ['zoho'];
-            if (empty($provider) || !in_array($provider, $allowedProviders, true)) {
-                $errorMessage = 'Invalid or missing provider. Only zoho is supported.';
+            $provider = strtolower((string) $account->provider);
+            if ($provider !== 'brevo') {
+                $errorMessage = 'Invalid or missing provider. Only Brevo is supported.';
                 Log::warning('Provider rejected during testConnection', [
                     'account_id' => $account->id,
-                    'provider' => $account->provider
+                    'provider' => $account->provider,
                 ]);
                 $account->update([
                     'connection_status' => false,
-                    'last_connection_error' => $errorMessage
+                    'last_connection_error' => $errorMessage,
                 ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => $errorMessage,
-                    'error' => $errorMessage
+                    'error' => $errorMessage,
                 ], 422);
             }
 
-            $python = 'py'; // Use py command for Windows Python launcher
-            if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-                $python = 'python3'; // Use python3 on Unix-like systems
-            }
+            $host = config('services.brevo.smtp_host', 'smtp-relay.brevo.com');
+            $port = (int) config('services.brevo.smtp_port', 587);
 
-            $script = base_path('test_network.py');
-            $args = [$python, $script, $this->getImapHost(strtolower(trim((string) $account->provider))), '993'];
+            $results = [
+                'dns' => false,
+                'socket' => false,
+                'tls' => false,
+                'host' => $host,
+                'port' => $port,
+            ];
 
-            $process = new Process($args, base_path());
-            $process->setTimeout(30);
-            $process->run();
-
-            $output = trim($process->getOutput());
-            $errorOutput = trim($process->getErrorOutput());
-
-            if ($process->isSuccessful()) {
-                // Parse the test results
-                $testResults = $this->parseNetworkTestResults($output);
-                
-                // Check if all tests passed
-                $allPassed = true;
-                $errorDetails = [];
-                
-                foreach ($testResults as $test => $result) {
-                    if (!$result) {
-                        $allPassed = false;
-                        $errorDetails[] = ucfirst($test) . ' test failed';
-                    }
-                }
-                
-                if ($allPassed) {
-                    // Update account with success
-                    $account->update([
-                        'connection_status' => true,
-                        'last_connection_error' => null
-                    ]);
-                    
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Connection test completed successfully',
-                        'results' => $testResults
-                    ]);
+            try {
+                if (function_exists('dns_get_record')) {
+                    $records = @dns_get_record($host, DNS_A + DNS_AAAA);
+                    $results['dns'] = !empty($records);
                 } else {
-                    // Update account with failure details
-                    $errorMessage = implode(', ', $errorDetails);
-                    $account->update([
-                        'connection_status' => false,
-                        'last_connection_error' => $errorMessage
-                    ]);
-                    
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Connection test failed: ' . $errorMessage,
-                        'error' => $errorMessage,
-                        'results' => $testResults
-                    ], 422);
+                    $results['dns'] = @checkdnsrr($host, 'A');
                 }
-            } else {
-                // Update account with failure
-                $errorMessage = $errorOutput ?: $output ?: 'Unknown connection error';
-                $account->update([
-                    'connection_status' => false,
-                    'last_connection_error' => $errorMessage
+            } catch (\Throwable $dnsException) {
+                Log::warning('Brevo DNS check failed', [
+                    'host' => $host,
+                    'error' => $dnsException->getMessage(),
                 ]);
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Connection test failed: ' . $errorMessage,
-                    'error' => $errorMessage
-                ], 422);
             }
+
+            $socketError = null;
+            try {
+                $stream = @fsockopen($host, $port, $errno, $errstr, 10);
+                if ($stream) {
+                    $results['socket'] = true;
+                    stream_set_timeout($stream, 10);
+
+                    @fgets($stream, 512); // banner
+                    fwrite($stream, "EHLO outlook-web\r\n");
+                    $this->consumeSmtpResponse($stream);
+                    fwrite($stream, "STARTTLS\r\n");
+                    $startTlsResponse = fgets($stream, 512);
+                    if ($startTlsResponse !== false && str_starts_with(trim($startTlsResponse), '220')) {
+                        $cryptoMethod = defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')
+                            ? STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT
+                            : STREAM_CRYPTO_METHOD_TLS_CLIENT;
+                        $results['tls'] = @stream_socket_enable_crypto($stream, true, $cryptoMethod) === true;
+                    }
+                    fclose($stream);
+                } else {
+                    $socketError = $errstr ?: 'Unable to open socket to Brevo SMTP relay.';
+                }
+            } catch (\Throwable $socketException) {
+                $socketError = $socketException->getMessage();
+                Log::warning('Brevo SMTP probe failed', [
+                    'host' => $host,
+                    'port' => $port,
+                    'error' => $socketException->getMessage(),
+                ]);
+            }
+
+            $isHealthy = $results['dns'] && $results['socket'];
+
+            $account->update([
+                'connection_status' => $isHealthy,
+                'last_connection_error' => $isHealthy ? null : ($socketError ?: 'Unable to reach Brevo SMTP relay.'),
+            ]);
+
+            if ($isHealthy) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Successfully connected to Brevo SMTP relay.',
+                    'results' => $results,
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Connection test failed.',
+                'error' => $socketError ?: 'DNS or socket check failed.',
+                'results' => $results,
+            ], 422);
         } catch (\Exception $e) {
             // Update account with failure
             $account->update([
@@ -317,9 +328,9 @@ class EmailAccountController extends Controller
         try {
             // Validate provider before proceeding
             $provider = $account->provider ? strtolower($account->provider) : null;
-            $allowedProviders = ['zoho'];
+            $allowedProviders = ['brevo'];
             if (empty($provider) || !in_array($provider, $allowedProviders, true)) {
-                $errorMessage = 'Invalid or missing provider. Only zoho is supported.';
+                $errorMessage = 'Invalid or missing provider. Only Brevo is supported.';
                 Log::warning('Provider rejected during testAuthentication', [
                     'account_id' => $account->id,
                     'provider' => $account->provider
@@ -331,63 +342,80 @@ class EmailAccountController extends Controller
                 ], 422);
             }
 
-            $python = 'py';
-            if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-                $python = 'python3';
-            }
+            $python = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? 'py' : 'python3';
+            $script = base_path('send_mail.py');
 
-            $script = base_path('sync_emails.py');
-
-            // Get the correct authentication token/password
-            $authToken = $account->access_token;
-            if (!$authToken && $account->password) {
+            $apiKey = $account->access_token;
+            if (!$apiKey && $account->password) {
                 try {
-                    $authToken = decrypt($account->password);
-                } catch (\Exception $e) {
-                    $authToken = $account->password;
+                    $apiKey = decrypt($account->password);
+                } catch (\Throwable $decryptException) {
+                    $apiKey = $account->password;
                 }
             }
+
+            if (empty($apiKey)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No Brevo SMTP key is configured for this account.',
+                ], 422);
+            }
+
+            $smtpUser = config('services.brevo.smtp_user', 'apikey');
 
             $args = [
                 $python,
                 $script,
-                $account->provider,
+                strtolower(trim($account->provider)),
+                $smtpUser,
+                $apiKey,
                 $account->email,
-                $authToken,
-                'inbox',
-                '1' // Test with just 1 email
+                'Brevo SMTP authentication test',
+                'This is a credential verification initiated from Outlook Web.',
+                '',
+                '',
+                json_encode([]),
+                $account->email,
+                '--dry-run',
             ];
 
             $process = new Process($args, base_path());
             $process->setTimeout(30);
+            $env = [
+                'PATH' => getenv('PATH'),
+                'SYSTEMROOT' => getenv('SYSTEMROOT'),
+                'WINDIR' => getenv('WINDIR'),
+                'TEMP' => getenv('TEMP'),
+                'TMP' => getenv('TMP'),
+                'BREVO_SMTP_HOST' => config('services.brevo.smtp_host', 'smtp-relay.brevo.com'),
+                'BREVO_SMTP_PORT' => (string) config('services.brevo.smtp_port', 587),
+            ];
+            $process->setEnv($env);
             $process->run();
 
             $output = trim($process->getOutput());
             $errorOutput = trim($process->getErrorOutput());
 
             if ($process->isSuccessful()) {
-                $result = json_decode($output, true);
-                
-                if (isset($result['error'])) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Authentication failed: ' . $result['error'],
-                        'debug_info' => $result['debug_info'] ?? null
-                    ], 422);
-                } else {
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Authentication successful! Found ' . count($result) . ' emails.',
-                        'email_count' => count($result)
-                    ]);
-                }
-            } else {
                 return response()->json([
-                    'success' => false,
-                    'message' => 'Authentication test failed',
-                    'error' => $errorOutput ?: $output
-                ], 422);
+                    'success' => true,
+                    'message' => 'Brevo API key authenticated successfully (no email was sent).',
+                    'output' => $output,
+                ]);
             }
+
+            Log::error('Brevo authentication test failed', [
+                'account_id' => $account->id,
+                'exit_code' => $process->getExitCode(),
+                'stdout' => $output,
+                'stderr' => $errorOutput,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Authentication test failed.',
+                'error' => $errorOutput ?: $output,
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Authentication test failed', [
                 'account_id' => $account->id,
@@ -402,84 +430,25 @@ class EmailAccountController extends Controller
     }
 
     /**
-     * Get IMAP host for the provider.
+     * Consume a multi-line SMTP response until a terminating line is read.
+     *
+     * @param resource|null $stream
      */
-    private function getImapHost(string $provider): string
+    private function consumeSmtpResponse($stream): void
     {
-        // We currently support Zoho only; keep for future extensibility
-        return 'imap.zoho.com';
-    }
-
-    /**
-     * Parse network test results from output.
-     */
-    private function parseNetworkTestResults(string $output): array
-    {
-        // Try to parse JSON output first (new format). The Python script prints
-        // a final JSON object; capture JSON from any line, preferring the most
-        // relevant (that contains expected keys).
-        $lines = explode("\n", (string) $output);
-        $jsonCandidates = [];
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') continue;
-
-            if (preg_match('/\{.*\}/', $line, $m)) {
-                $decoded = json_decode($m[0], true);
-                if (is_array($decoded)) {
-                    $jsonCandidates[] = $decoded;
-                }
-            }
+        if (!$stream) {
+            return;
         }
 
-        // Prefer a candidate that has the expected keys
-        foreach (array_reverse($jsonCandidates) as $candidate) {
-            $expectedKeys = ['dns', 'socket', 'ssl', 'imap'];
-            $hasAll = true;
-            foreach ($expectedKeys as $k) {
-                if (!array_key_exists($k, $candidate)) { $hasAll = false; break; }
+        while (($line = fgets($stream, 512)) !== false) {
+            if (strlen($line) < 4) {
+                break;
             }
-            if ($hasAll) {
-                return $candidate;
+
+            if ($line[3] !== '-') {
+                break;
             }
         }
-        // Fallback to the last JSON if any
-        if (!empty($jsonCandidates)) {
-            return end($jsonCandidates);
-        }
-
-        // Fallback to text parsing. Accept both "✓ PASS" and "[OK] PASS" forms (case-insensitive).
-        $results = [
-            'dns' => false,
-            'socket' => false,
-            'ssl' => false,
-            'imap' => false,
-            'overall' => false
-        ];
-
-        $patterns = [
-            'dns' => '/DNS:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
-            'socket' => '/SOCKET:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
-            'ssl' => '/SSL:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
-            'imap' => '/IMAP:\s*(?:\[OK\]\s*PASS|✓\s*PASS)/i',
-        ];
-
-        foreach ($patterns as $key => $regex) {
-            if (preg_match($regex, $output) === 1) {
-                $results[$key] = true;
-            }
-        }
-
-        // If overall not explicitly present, infer it from all checks
-        if ($results['dns'] && $results['socket'] && $results['ssl'] && $results['imap']) {
-            $results['overall'] = true;
-        } else {
-            // Also handle explicit overall marker
-            if (stripos($output, 'ALL TESTS PASSED') !== false) {
-                $results['overall'] = true;
-            }
-        }
-
-        return $results;
     }
 }
+

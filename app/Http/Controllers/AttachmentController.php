@@ -95,7 +95,7 @@ class AttachmentController extends Controller
 
     private function getAttachmentPath(Attachment $attachment): ?string
     {
-        // Try file_path first (direct path from sync_emails.py)
+        // Try file_path first (legacy import path)
         if ($attachment->file_path) {
             // Normalize path separators for cross-platform compatibility
             $normalizedPath = str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $attachment->file_path);

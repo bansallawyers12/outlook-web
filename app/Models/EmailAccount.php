@@ -44,7 +44,7 @@ class EmailAccount extends Model
     public function setProviderAttribute($value): void
     {
         $normalized = strtolower(trim((string) $value));
-        $this->attributes['provider'] = $normalized === 'zoho' ? 'zoho' : 'zoho';
+        $this->attributes['provider'] = $normalized === 'brevo' ? 'brevo' : 'brevo';
     }
 
     /**

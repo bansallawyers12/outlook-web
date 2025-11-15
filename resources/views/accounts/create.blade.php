@@ -27,7 +27,7 @@
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('provider') border-red-500 @enderror"
                                     required>
                                 <option value="">Select a provider</option>
-                                <option value="zoho" {{ (old('provider') == 'zoho' || request('provider') == 'zoho') ? 'selected' : '' }}>Zoho Mail</option>
+                                <option value="brevo" {{ (old('provider', request('provider')) == 'brevo') ? 'selected' : '' }}>Brevo (SMTP + Webhooks)</option>
                             </select>
                             @error('provider')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -52,61 +52,31 @@
                         <!-- Password -->
                         <div>
                             <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-                                Password / App Password
+                                Brevo SMTP Key
                             </label>
                             <input type="password" name="password" id="password" 
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('password') border-red-500 @enderror"
-                                   placeholder="Enter your password or app-specific password"
+                                   placeholder="Enter your Brevo SMTP key"
                                    required>
                             @error('password')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                             <p class="mt-1 text-sm text-gray-500">
-                                For Zoho, you may need to use an app-specific password if 2FA is enabled.
+                                Generate a key in Brevo under SMTP & API → API Keys. Keep it private.
                             </p>
-                        </div>
-
-                        <!-- Access Token (Optional) -->
-                        <div>
-                            <label for="access_token" class="block text-sm font-medium text-gray-700 mb-2">
-                                Access Token (Optional)
-                            </label>
-                            <input type="text" name="access_token" id="access_token" 
-                                   value="{{ old('access_token') }}"
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('access_token') border-red-500 @enderror"
-                                   placeholder="OAuth access token (if using OAuth)">
-                            @error('access_token')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                            <p class="mt-1 text-sm text-gray-500">
-                                Leave empty if using password authentication.
-                            </p>
-                        </div>
-
-                        <!-- Refresh Token (Optional) -->
-                        <div>
-                            <label for="refresh_token" class="block text-sm font-medium text-gray-700 mb-2">
-                                Refresh Token (Optional)
-                            </label>
-                            <input type="text" name="refresh_token" id="refresh_token" 
-                                   value="{{ old('refresh_token') }}"
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('refresh_token') border-red-500 @enderror"
-                                   placeholder="OAuth refresh token (if using OAuth)">
-                            @error('refresh_token')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
                         </div>
 
                         <!-- Help Information -->
                         <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
                             <h4 class="text-sm font-medium text-blue-800 mb-2">Setup Instructions:</h4>
                             <div class="text-sm text-blue-700 space-y-2">
-                                <div id="zoho-help" class="hidden">
-                                    <p><strong>Zoho Mail:</strong></p>
+                                <div id="brevo-help" class="hidden">
+                                    <p><strong>Brevo:</strong></p>
                                     <ul class="list-disc list-inside ml-4 space-y-1">
-                                        <li>Enable IMAP in your Zoho Mail settings</li>
-                                        <li>Use your regular password or generate an app-specific password</li>
-                                        <li>If you have 2FA enabled, you must use an app-specific password</li>
+                                        <li>Verify your sending domain and add SPF/DKIM records in Brevo.</li>
+                                        <li>Create an SMTP key under <em>SMTP &amp; API → API Keys</em> and paste it above.</li>
+                                        <li>Configure the Brevo Inbound Parse webhook to POST to <code>{{ url('/api/brevo/inbound') }}</code>.</li>
+                                        <li>Set the same inbound secret in Brevo and your <code>BREVO_INBOUND_SECRET</code> env variable.</li>
                                     </ul>
                                 </div>
                                 
@@ -139,15 +109,15 @@
             
             // Show relevant help section
             const selectedProvider = this.value;
-            if (selectedProvider === 'zoho') {
-                document.getElementById('zoho-help').classList.remove('hidden');
+            if (selectedProvider === 'brevo') {
+                document.getElementById('brevo-help').classList.remove('hidden');
             }
         });
 
         // Show help for pre-selected provider
         const selectedProvider = document.getElementById('provider').value;
-        if (selectedProvider === 'zoho') {
-            document.getElementById('zoho-help').classList.remove('hidden');
+        if (selectedProvider === 'brevo') {
+            document.getElementById('brevo-help').classList.remove('hidden');
         }
     </script>
 </x-app-layout>
